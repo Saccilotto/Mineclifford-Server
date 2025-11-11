@@ -1,0 +1,79 @@
+services:
+  # Backend FastAPI
+  web-backend:
+    build:
+      context: .
+      dockerfile: docker/web/Dockerfile
+    container_name: mineclifford-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount source code for hot reload
+      - ./src:/app/src
+      # Mount data directory for database
+      - ./data:/app/data
+      # Mount docker socket for container management
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - DATABASE_URL=sqlite:///app/data/mineclifford.db
+      - LOG_LEVEL=INFO
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - mineclifford-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Frontend Nginx
+  web-frontend:
+    image: nginx:alpine
+    container_name: mineclifford-frontend
+    ports:
+      - "80:80"
+    volumes:
+      # Mount frontend files
+      - ./src/web/frontend:/usr/share/nginx/html:ro
+      # Mount nginx config
+      - ./docker/web/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - web-backend
+    restart: unless-stopped
+    networks:
+      - mineclifford-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis cache
+  redis:
+    image: redis:7-alpine
+    container_name: mineclifford-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    networks:
+      - mineclifford-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  mineclifford-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+    driver: local

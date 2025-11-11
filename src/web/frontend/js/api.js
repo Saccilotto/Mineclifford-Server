@@ -3,8 +3,22 @@
  * Handles all HTTP requests to the backend API
  */
 class MinecliffordAPI {
-    constructor(baseURL = 'http://localhost:8000') {
-        this.baseURL = baseURL;
+    constructor(baseURL = null) {
+        // Auto-detect base URL:
+        // - If port 3000 (dev server), use localhost:8000
+        // - Otherwise (nginx), use same origin (empty string for relative URLs)
+        if (baseURL === null) {
+            const port = window.location.port;
+            if (port === '3000') {
+                // Development mode
+                this.baseURL = 'http://localhost:8000';
+            } else {
+                // Production mode (nginx proxy)
+                this.baseURL = '';
+            }
+        } else {
+            this.baseURL = baseURL;
+        }
     }
 
     /**
@@ -101,7 +115,15 @@ class MinecliffordAPI {
 
     // WebSocket for console
     createConsoleWebSocket(serverId) {
-        const wsURL = this.baseURL.replace('http', 'ws');
+        let wsURL;
+        if (this.baseURL === '') {
+            // Production mode (nginx): use current host with ws/wss
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            wsURL = `${protocol}//${window.location.host}`;
+        } else {
+            // Development mode: convert http to ws
+            wsURL = this.baseURL.replace('http', 'ws');
+        }
         return new WebSocket(`${wsURL}/api/console/${serverId}`);
     }
 }
