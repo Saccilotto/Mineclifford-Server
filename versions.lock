@@ -1,0 +1,143 @@
+# Mineclifford Dependency Versions Lock File
+# This file locks all external dependencies to specific versions
+# to ensure consistent, reproducible deployments.
+#
+# Last updated: 2025-11-11
+# DO NOT MODIFY unless you understand the implications
+
+# ============================================================================
+# Terraform & Infrastructure
+# ============================================================================
+
+[terraform]
+version = "1.10.3"
+# https://github.com/hashicorp/terraform/releases
+
+[terraform.providers.aws]
+source = "hashicorp/aws"
+version = "5.82.2"
+# https://registry.terraform.io/providers/hashicorp/aws
+
+[terraform.providers.azurerm]
+source = "hashicorp/azurerm"
+version = "4.13.0"
+# https://registry.terraform.io/providers/hashicorp/azurerm
+
+[terraform.providers.tls]
+source = "hashicorp/tls"
+version = "4.0.6"
+# https://registry.terraform.io/providers/hashicorp/tls
+
+# ============================================================================
+# Configuration Management
+# ============================================================================
+
+[ansible]
+version = "2.16.3"
+# https://github.com/ansible/ansible/releases
+
+[ansible.core]
+version = "2.16.3"
+
+# ============================================================================
+# Python Dependencies
+# ============================================================================
+
+[python]
+min_version = "3.8"
+recommended_version = "3.12"
+
+[python.packages]
+aiohttp = "3.9.1"
+tabulate = "0.9.0"
+PyYAML = "6.0.1"
+typing-extensions = "4.9.0"
+
+# Development dependencies (optional)
+[python.packages.dev]
+pytest = "7.4.3"
+pytest-asyncio = "0.21.1"
+black = "23.12.1"
+mypy = "1.7.1"
+
+# ============================================================================
+# Container Images
+# ============================================================================
+
+[docker.images.minecraft]
+java = "itzg/minecraft-server:2024.12.0-java21"
+bedrock = "itzg/minecraft-bedrock-server:ubuntu-2024.12.0"
+
+[docker.images.monitoring]
+prometheus = "prom/prometheus:v2.48.1"
+grafana = "grafana/grafana:10.2.3"
+node_exporter = "prom/node-exporter:v1.7.0"
+cadvisor = "gcr.io/cadvisor/cadvisor:v0.48.1"
+
+[docker.images.proxy]
+velocity = "itzg/bungeecord:java21-2024.12.0"
+bungeecord = "itzg/bungeecord:java17-2024.12.0"
+
+# ============================================================================
+# Kubernetes
+# ============================================================================
+
+[kubernetes]
+kubectl_version = "1.29.0"
+helm_version = "3.13.3"
+
+[kubernetes.charts]
+minecraft = "4.0.0"
+prometheus = "25.8.0"
+grafana = "7.0.8"
+
+# ============================================================================
+# Minecraft Versions (Defaults)
+# ============================================================================
+
+[minecraft.defaults]
+# These are the default versions used when not specified
+# Can be overridden via Version Manager CLI
+
+[minecraft.defaults.java]
+vanilla = "1.21.4"
+paper = "1.21.4"
+spigot = "1.21.4"
+fabric = "1.21.4"
+forge = "1.21.4-52.0.29"
+
+[minecraft.defaults.bedrock]
+version = "1.21.44"
+
+# ============================================================================
+# Cloud Provider CLI Tools
+# ============================================================================
+
+[cli.aws]
+version = "2.15.0"
+# https://github.com/aws/aws-cli/releases
+
+[cli.azure]
+version = "2.56.0"
+# https://github.com/Azure/azure-cli/releases
+
+# ============================================================================
+# Version Update Policy
+# ============================================================================
+
+# How to update versions:
+# 1. Test updates in a staging environment first
+# 2. Update one component at a time
+# 3. Run integration tests after each update
+# 4. Update this file with new versions
+# 5. Commit changes with a clear message
+#
+# Breaking change policy:
+# - Major version updates (x.0.0) may require code changes
+# - Minor version updates (0.x.0) should be backward compatible
+# - Patch version updates (0.0.x) are typically safe
+#
+# Dependency update schedule:
+# - Security patches: Immediately
+# - Minor updates: Monthly review
+# - Major updates: Quarterly review

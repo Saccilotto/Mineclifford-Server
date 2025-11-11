@@ -65,17 +65,25 @@
       state: present
       update_cache: yes
   
-  - name: Add Docker's official GPG key and save it in the recommended keyring
-    ansible.builtin.shell: |
-      curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-    args:
+  - name: Add Docker's official GPG key
+    ansible.builtin.get_url:
+      url: https://download.docker.com/linux/ubuntu/gpg
+      dest: /tmp/docker.gpg
+      mode: '0644'
+    become: yes
+
+  - name: Convert GPG key to binary format
+    ansible.builtin.command:
+      cmd: gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg /tmp/docker.gpg
       creates: /usr/share/keyrings/docker-archive-keyring.gpg
-    ignore_errors: yes
+    become: yes
 
   - name: Add Docker's repository
-    ansible.builtin.shell: |
-      echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu jammy stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-    ignore_errors: yes
+    ansible.builtin.apt_repository:
+      repo: "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+      state: present
+      filename: docker
+    become: yes
 
   - name: Update apt cache
     ansible.builtin.apt:
@@ -100,31 +108,33 @@
     ignore_errors: yes
 
   - name: Check if node is already part of a swarm
-    shell: docker info --format '{% raw %}{{.Swarm.LocalNodeState}}{% endraw %}'
-    register: swarm_state
-    ignore_errors: yes
-
-  - name: Check if node is already part of a swarm
-    shell: docker info --format '{% raw %}{{.Swarm.LocalNodeState}}{% endraw %}'
-    register: swarm_state
+    community.docker.docker_swarm_info:
+    register: swarm_info
     ignore_errors: yes
     
   - name: Initialize Swarm on manager node
-    shell: docker swarm init --advertise-addr {{ inventory_hostname }}
-    when: inventory_hostname == manager_node and swarm_state.stdout != "active"
+    community.docker.docker_swarm:
+      state: present
+      advertise_addr: "{{ inventory_hostname }}"
+    when: inventory_hostname == manager_node and (swarm_info.failed or not swarm_info.docker_swarm_active)
     register: swarm_init
     ignore_errors: yes
 
   # Multi-node swarm setup
   - name: Get swarm worker token
-    shell: docker swarm join-token -q worker
-    register: token_output
+    community.docker.docker_swarm_info:
+    register: swarm_worker_info
+    when: inventory_hostname == manager_node and not single_node_swarm and groups['all'] | length > 1
+
+  - name: Set worker token from swarm info
+    set_fact:
+      token_output: "{{ swarm_worker_info }}"
     when: inventory_hostname == manager_node and not single_node_swarm and groups['all'] | length > 1
     
   - name: Set token fact on manager
     set_fact:
-      worker_token: "{{ token_output.stdout }}"
-    when: inventory_hostname == manager_node and not single_node_swarm and token_output is defined and token_output.stdout is defined
+      worker_token: "{{ token_output.swarm_facts.JoinTokens.Worker }}"
+    when: inventory_hostname == manager_node and not single_node_swarm and token_output is defined and token_output.swarm_facts is defined
     
   - name: Share token with workers
     set_fact:
@@ -132,20 +142,27 @@
     when: inventory_hostname != manager_node and not single_node_swarm and hostvars[groups['instance1'][0]].worker_token is defined
     
   - name: Join workers to swarm
-    shell: "docker swarm join --token {{ worker_token }} {{ manager_node }}:2377"
+    community.docker.docker_swarm:
+      state: join
+      advertise_addr: "{{ inventory_hostname }}"
+      join_token: "{{ worker_token }}"
+      remote_addrs: ["{{ manager_node }}:2377"]
     when: inventory_hostname != manager_node and not single_node_swarm and worker_token is defined
     ignore_errors: yes
     
   # For single node swarm
   - name: Ensure node is a swarm manager in single-node mode
-    shell: docker swarm init --force-new-cluster --advertise-addr {{ inventory_hostname }}
-    when: single_node_swarm and swarm_state.stdout != "active"
+    community.docker.docker_swarm:
+      state: present
+      advertise_addr: "{{ inventory_hostname }}"
+      force: yes
+    when: single_node_swarm and (swarm_info.failed or not swarm_info.docker_swarm_active)
     ignore_errors: yes
-  
+
   # Get manager node IP
   - name: Get manager node IP
-    shell: hostname -I | awk '{print $1}'
-    register: manager_ip_result
+    set_fact:
+      manager_ip_result: "{{ ansible_default_ipv4.address }}"
     delegate_to: "{{ manager_node }}"
     run_once: true
 
@@ -202,7 +219,7 @@
 
   - name: Get manager and worker IPs for stack
     set_fact:
-      manager_ip_value: "{{ manager_ip_result.stdout }}"
+      manager_ip_value: "{{ manager_ip_result }}"
     delegate_to: "{{ manager_node }}"
     run_once: true
 
@@ -266,7 +283,7 @@
 
   # Get final status
   - name: Show service status
-    command: docker service ls
+    community.docker.docker_swarm_service_info:
     delegate_to: "{{ manager_node }}"
     run_once: true
     register: final_service_status
@@ -274,8 +291,8 @@
   
   - name: Display service status
     debug:
-      var: final_service_status.stdout_lines
-    when: final_service_status is defined
+      var: final_service_status.services
+    when: final_service_status is defined and final_service_status.services is defined
     
   # Create backup script for Minecraft worlds
   - name: Create backup script for Minecraft worlds
