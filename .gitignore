@@ -1,3 +1,6 @@
+# Python vevnv directories
+venv/
+
 # Local .terraform directories
 **/.terraform/*
 
@@ -6,6 +9,24 @@
 *.sum
 
 # Compiled Python files
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Database files
+data/
+*.db
+*.sqlite
+*.sqlite3
 
 # .tfstate files
 *.tfstate

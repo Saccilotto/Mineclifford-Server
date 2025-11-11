@@ -1,0 +1,177 @@
+/**
+ * Mineclifford Dashboard - Custom Styles
+ * Supplementary styles to Tailwind CSS
+ */
+
+/* Smooth transitions */
+* {
+    transition-property: background-color, border-color, color, fill, stroke;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 150ms;
+}
+
+/* Custom scrollbar for dark theme */
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+::-webkit-scrollbar-track {
+    background: #1a1a1a;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #4a5568;
+    border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #718096;
+}
+
+/* Improve xterm.js terminal appearance */
+.xterm {
+    height: 100%;
+    padding: 10px;
+}
+
+.xterm-viewport {
+    background-color: #000000 !important;
+}
+
+/* Loading spinner */
+.spinner {
+    border: 3px solid #f3f3f3;
+    border-top: 3px solid #3498db;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Pulse animation for creating status */
+.pulse {
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+}
+
+/* Fade in animation */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.fade-in {
+    animation: fadeIn 0.3s ease-in;
+}
+
+/* Modal backdrop blur */
+.modal-backdrop {
+    backdrop-filter: blur(4px);
+}
+
+/* Server card hover effect */
+.bg-gray-750 {
+    background-color: #2d3748;
+}
+
+/* Notification slide-in animation */
+#notification {
+    animation: slideInRight 0.3s ease-out;
+}
+
+@keyframes slideInRight {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+/* Button focus states */
+button:focus {
+    outline: 2px solid #4299e1;
+    outline-offset: 2px;
+}
+
+/* Input focus states */
+input:focus,
+select:focus {
+    outline: 2px solid #4299e1;
+    outline-offset: 0;
+    border-color: #4299e1;
+}
+
+/* Disabled state */
+button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Selection color */
+::selection {
+    background-color: #4299e1;
+    color: white;
+}
+
+/* Status badge animations */
+.status-running {
+    animation: pulse-green 2s infinite;
+}
+
+@keyframes pulse-green {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(72, 187, 120, 0.7);
+    }
+    50% {
+        box-shadow: 0 0 0 6px rgba(72, 187, 120, 0);
+    }
+}
+
+/* Responsive improvements */
+@media (max-width: 768px) {
+    .container {
+        padding: 0.5rem;
+    }
+
+    header h1 {
+        font-size: 1.25rem;
+    }
+
+    button {
+        font-size: 0.875rem;
+        padding: 0.5rem 0.75rem;
+    }
+}
+
+/* Print styles */
+@media print {
+    header,
+    button,
+    #create-modal,
+    #console-modal {
+        display: none;
+    }
+}
