@@ -174,10 +174,15 @@ class Dashboard {
     async createServer(formData) {
         try {
             this.showNotification('Creating server...', 'info');
-            await this.api.createServer(formData);
+            const newServer = await this.api.createServer(formData);
             this.hideCreateModal();
             await this.refresh();
-            this.showNotification('Server created successfully!', 'success');
+            this.showNotification('Server created! Opening console...', 'success');
+
+            // Auto-open console to show deployment progress
+            setTimeout(() => {
+                this.showConsole(newServer.id);
+            }, 500);
         } catch (error) {
             this.showNotification('Failed to create server: ' + error.message, 'error');
         }

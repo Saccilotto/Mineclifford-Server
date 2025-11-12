@@ -2,12 +2,81 @@ from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from typing import List
 import uuid
 import json
+import asyncio
 from datetime import datetime
 
 from web.backend.models.server import ServerCreate, ServerResponse, ServerStatus
 from web.backend.database import get_db
+from web.backend.services.docker import DockerService
+from web.backend.services.deployment import DeploymentService
 
 router = APIRouter(prefix="/api/servers", tags=["servers"])
+docker_service = DockerService()
+deployment_service = DeploymentService()
+
+async def deploy_server(server_id: str, server_config: ServerCreate):
+    """
+    Função assíncrona para fazer deploy do servidor
+    """
+    db = await get_db()
+
+    try:
+        # Prepara config para deployment
+        config_dict = server_config.model_dump()
+        config_dict['id'] = server_id
+
+        # Executa deployment
+        result = await deployment_service.deploy_server(config_dict)
+
+        if result.get('status') == 'success':
+            # Atualiza servidor com informações do deployment
+            await db.execute("""
+                UPDATE servers
+                SET status = ?,
+                    container_id = ?,
+                    ip_address = ?,
+                    port = ?,
+                    updated_at = ?
+                WHERE id = ?
+            """, (
+                ServerStatus.RUNNING.value,
+                result.get('container_id'),
+                result.get('ip_address'),
+                result.get('port', 25565),
+                datetime.now().isoformat(),
+                server_id
+            ))
+            await db.commit()
+            print(f"Server {server_id} deployed successfully")
+        else:
+            # Marca como erro
+            await db.execute("""
+                UPDATE servers
+                SET status = ?,
+                    updated_at = ?
+                WHERE id = ?
+            """, (
+                ServerStatus.ERROR.value,
+                datetime.now().isoformat(),
+                server_id
+            ))
+            await db.commit()
+            print(f"Server {server_id} deployment failed: {result.get('error')}")
+
+    except Exception as e:
+        print(f"Error deploying server {server_id}: {str(e)}")
+        # Marca como erro
+        await db.execute("""
+            UPDATE servers
+            SET status = ?,
+                updated_at = ?
+            WHERE id = ?
+        """, (
+            ServerStatus.ERROR.value,
+            datetime.now().isoformat(),
+            server_id
+        ))
+        await db.commit()
 
 @router.get("/", response_model=List[ServerResponse])
 async def list_servers():
@@ -16,7 +85,7 @@ async def list_servers():
 
     cursor = await db.execute("""
         SELECT id, name, server_type, version, status,
-               ip_address, port, created_at, updated_at
+               ip_address, port, container_id, created_at, updated_at
         FROM servers
         ORDER BY created_at DESC
     """)
@@ -32,6 +101,7 @@ async def list_servers():
             status=row['status'],
             ip_address=row['ip_address'],
             port=row['port'],
+            container_id=row['container_id'],
             created_at=row['created_at'],
             updated_at=row['updated_at']
         )
@@ -66,8 +136,8 @@ async def create_server(server: ServerCreate):
 
         await db.commit()
 
-        # TODO: Iniciar deployment assíncrono aqui
-        # asyncio.create_task(deploy_server(server_id, server))
+        # Inicia deployment assíncrono
+        asyncio.create_task(deploy_server(server_id, server))
 
         return ServerResponse(
             id=server_id,
@@ -91,7 +161,7 @@ async def get_server(server_id: str):
 
     cursor = await db.execute("""
         SELECT id, name, server_type, version, status,
-               ip_address, port, created_at, updated_at
+               ip_address, port, container_id, created_at, updated_at
         FROM servers
         WHERE id = ?
     """, (server_id,))
@@ -109,6 +179,7 @@ async def get_server(server_id: str):
         status=row['status'],
         ip_address=row['ip_address'],
         port=row['port'],
+        container_id=row['container_id'],
         created_at=row['created_at'],
         updated_at=row['updated_at']
     )
@@ -118,17 +189,28 @@ async def delete_server(server_id: str):
     """Remove um servidor"""
     db = await get_db()
 
+    # Busca container_id antes de deletar
     cursor = await db.execute(
+        "SELECT container_id FROM servers WHERE id = ?",
+        (server_id,)
+    )
+    row = await cursor.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Server not found")
+
+    container_id = row['container_id']
+
+    # Remove do banco de dados
+    await db.execute(
         "DELETE FROM servers WHERE id = ?",
         (server_id,)
     )
-
     await db.commit()
 
-    if cursor.rowcount == 0:
-        raise HTTPException(status_code=404, detail="Server not found")
-
-    # TODO: Executar terraform destroy aqui
+    # Remove infraestrutura (container ou cloud resources)
+    if container_id:
+        await deployment_service.destroy_server(server_id, container_id)
 
     return {"message": "Server deleted successfully"}
 
@@ -147,7 +229,14 @@ async def start_server(server_id: str):
     if not row:
         raise HTTPException(status_code=404, detail="Server not found")
 
-    # TODO: Iniciar container Docker ou instância cloud
+    container_id = row['container_id']
+
+    if container_id:
+        # Inicia container Docker
+        result = await docker_service.start_container(container_id)
+
+        if "error" in result:
+            raise HTTPException(status_code=500, detail=result['error'])
 
     await db.execute(
         "UPDATE servers SET status = ?, updated_at = ? WHERE id = ?",
@@ -163,7 +252,7 @@ async def stop_server(server_id: str):
     db = await get_db()
 
     cursor = await db.execute(
-        "SELECT status FROM servers WHERE id = ?",
+        "SELECT status, container_id FROM servers WHERE id = ?",
         (server_id,)
     )
     row = await cursor.fetchone()
@@ -171,7 +260,14 @@ async def stop_server(server_id: str):
     if not row:
         raise HTTPException(status_code=404, detail="Server not found")
 
-    # TODO: Parar container Docker ou instância cloud
+    container_id = row['container_id']
+
+    if container_id:
+        # Para container Docker
+        result = await docker_service.stop_container(container_id)
+
+        if "error" in result:
+            raise HTTPException(status_code=500, detail=result['error'])
 
     await db.execute(
         "UPDATE servers SET status = ?, updated_at = ? WHERE id = ?",
@@ -190,16 +286,70 @@ async def restart_server(server_id: str):
 
 @router.websocket("/console/{server_id}")
 async def websocket_console(websocket: WebSocket, server_id: str):
-    """WebSocket para console do servidor"""
+    """WebSocket para console do servidor com logs em tempo real"""
     await websocket.accept()
 
+    db = await get_db()
+
+    # Busca o container_id do servidor
+    cursor = await db.execute(
+        "SELECT container_id, status FROM servers WHERE id = ?",
+        (server_id,)
+    )
+    row = await cursor.fetchone()
+
+    if not row:
+        await websocket.send_text("Error: Server not found")
+        await websocket.close()
+        return
+
+    container_id = row['container_id']
+    status = row['status']
+
+    if not container_id:
+        await websocket.send_text("Waiting for server deployment...")
+
+        # Aguarda até que o container_id seja definido (máximo 60 segundos)
+        for _ in range(60):
+            await asyncio.sleep(1)
+            cursor = await db.execute(
+                "SELECT container_id, status FROM servers WHERE id = ?",
+                (server_id,)
+            )
+            row = await cursor.fetchone()
+            if row and row['container_id']:
+                container_id = row['container_id']
+                await websocket.send_text(f"\r\nServer deployment started! Container: {container_id[:12]}\r\n")
+                break
+        else:
+            await websocket.send_text("Error: Server deployment timeout")
+            await websocket.close()
+            return
+
+    # Inicia streaming de logs em background
+    async def stream_logs_task():
+        try:
+            async for log_line in docker_service.stream_logs(container_id):
+                await websocket.send_text(log_line)
+        except Exception as e:
+            await websocket.send_text(f"\r\nError streaming logs: {str(e)}\r\n")
+
+    log_task = asyncio.create_task(stream_logs_task())
+
     try:
-        # TODO: Conectar com logs do container
-        # Por enquanto, apenas mantém conexão aberta
+        # Recebe comandos do usuário
         while True:
             data = await websocket.receive_text()
-            # Echo de volta (substituir com comando real)
-            await websocket.send_text(f"Received: {data}")
+
+            if data.strip():
+                # Executa comando no container
+                result = await docker_service.exec_command(container_id, data.strip())
+
+                if "error" in result:
+                    await websocket.send_text(f"\r\nError: {result['error']}\r\n")
+                else:
+                    await websocket.send_text(result.get('output', ''))
 
     except WebSocketDisconnect:
+        log_task.cancel()
         print(f"Console disconnected for server {server_id}")
