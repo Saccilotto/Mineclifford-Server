@@ -353,3 +353,97 @@ async def websocket_console(websocket: WebSocket, server_id: str):
     except WebSocketDisconnect:
         log_task.cancel()
         print(f"Console disconnected for server {server_id}")
+
+@router.post("/{server_id}/backup")
+async def create_backup(server_id: str):
+    """Cria backup do servidor"""
+    db = await get_db()
+
+    # Busca informações do servidor
+    cursor = await db.execute(
+        "SELECT name, container_id FROM servers WHERE id = ?",
+        (server_id,)
+    )
+    row = await cursor.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Server not found")
+
+    if not row['container_id']:
+        raise HTTPException(status_code=400, detail="Server has no container (not deployed)")
+
+    # Cria backup
+    result = await docker_service.create_backup(row['container_id'], row['name'])
+
+    if "error" in result:
+        raise HTTPException(status_code=500, detail=result['error'])
+
+    return {
+        "message": "Backup created successfully",
+        "backup_name": result.get('backup_name'),
+        "timestamp": result.get('timestamp')
+    }
+
+@router.post("/{server_id}/restore")
+async def restore_backup(server_id: str, backup_name: str):
+    """Restaura backup do servidor"""
+    db = await get_db()
+
+    # Busca container_id
+    cursor = await db.execute(
+        "SELECT container_id FROM servers WHERE id = ?",
+        (server_id,)
+    )
+    row = await cursor.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Server not found")
+
+    if not row['container_id']:
+        raise HTTPException(status_code=400, detail="Server has no container (not deployed)")
+
+    # Restaura backup
+    result = await docker_service.restore_backup(row['container_id'], backup_name)
+
+    if "error" in result:
+        raise HTTPException(status_code=500, detail=result['error'])
+
+    # Atualiza status no banco
+    await db.execute(
+        "UPDATE servers SET status = ?, updated_at = ? WHERE id = ?",
+        (ServerStatus.RUNNING.value, datetime.now().isoformat(), server_id)
+    )
+    await db.commit()
+
+    return {
+        "message": result.get('message', 'Backup restored successfully'),
+        "backup_name": backup_name
+    }
+
+@router.get("/{server_id}/backups")
+async def list_backups(server_id: str):
+    """Lista backups disponíveis do servidor"""
+    db = await get_db()
+
+    # Busca container_id
+    cursor = await db.execute(
+        "SELECT container_id FROM servers WHERE id = ?",
+        (server_id,)
+    )
+    row = await cursor.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Server not found")
+
+    if not row['container_id']:
+        raise HTTPException(status_code=400, detail="Server has no container (not deployed)")
+
+    # Lista backups
+    result = await docker_service.list_backups(row['container_id'])
+
+    if "error" in result:
+        raise HTTPException(status_code=500, detail=result['error'])
+
+    return {
+        "backups": result.get('backups', '')
+    }

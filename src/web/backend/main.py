@@ -8,14 +8,20 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from web.backend.database import init_db, close_db
-from web.backend.api import versions, servers, monitoring
+from web.backend.api import versions, servers, monitoring, metrics
+from web.backend.services.scheduler import backup_scheduler
+from web.backend.services.metrics import metrics_service
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     await init_db()
+    await backup_scheduler.start()
+    await metrics_service.start()
     yield
     # Shutdown
+    await metrics_service.stop()
+    await backup_scheduler.stop()
     await close_db()
 
 app = FastAPI(
@@ -38,6 +44,7 @@ app.add_middleware(
 app.include_router(versions.router)
 app.include_router(servers.router)
 app.include_router(monitoring.router)
+app.include_router(metrics.router)
 
 @app.get("/")
 async def root():

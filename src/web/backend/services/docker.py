@@ -386,13 +386,27 @@ class DockerService:
         try:
             import datetime
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_name = f"backup_{server_name}_{timestamp}.tar"
+            backup_name = f"backup_{server_name}_{timestamp}.tar.gz"
+            backup_path = f"/data/backups/{backup_name}"
 
-            # Cria arquivo tar do volume /data
+            # Cria diretório de backups se não existir
+            mkdir_config = {
+                "AttachStdout": True,
+                "AttachStderr": True,
+                "Cmd": ["mkdir", "-p", "/data/backups"]
+            }
+            mkdir_response = self.client.post(f"/containers/{container_id}/exec", json=mkdir_config)
+            if mkdir_response.status_code == 201:
+                exec_id = mkdir_response.json()['Id']
+                self.client.post(f"/exec/{exec_id}/start", json={"Detach": False})
+
+            # Cria arquivo tar.gz do mundo do servidor (exclui pasta backups)
             exec_config = {
                 "AttachStdout": True,
                 "AttachStderr": True,
-                "Cmd": ["tar", "-czf", f"/tmp/{backup_name}", "-C", "/data", "."]
+                "Cmd": ["tar", "-czf", backup_path, "-C", "/data",
+                        "--exclude=backups", "--exclude=logs",
+                        "world", "server.properties", "ops.json", "whitelist.json"]
             }
 
             response = self.client.post(f"/containers/{container_id}/exec", json=exec_config)
@@ -406,9 +420,95 @@ class DockerService:
                 return {
                     "status": "success",
                     "backup_name": backup_name,
+                    "backup_path": backup_path,
                     "timestamp": timestamp
                 }
             else:
                 return {"error": "Failed to create backup"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    async def restore_backup(self, container_id: str, backup_name: str) -> Dict[str, Any]:
+        """
+        Restaura backup do mundo do servidor
+        """
+        if not self.available or not self.client:
+            return {"error": "Docker not available"}
+
+        try:
+            backup_path = f"/data/backups/{backup_name}"
+
+            # Para o servidor antes de restaurar
+            await self.stop_container(container_id)
+
+            # Remove arquivos atuais do mundo
+            rm_config = {
+                "AttachStdout": True,
+                "AttachStderr": True,
+                "Cmd": ["sh", "-c", "rm -rf /data/world /data/server.properties /data/ops.json /data/whitelist.json"]
+            }
+            rm_response = self.client.post(f"/containers/{container_id}/exec", json=rm_config)
+            if rm_response.status_code == 201:
+                exec_id = rm_response.json()['Id']
+                self.client.post(f"/exec/{exec_id}/start", json={"Detach": False})
+
+            # Extrai o backup
+            restore_config = {
+                "AttachStdout": True,
+                "AttachStderr": True,
+                "Cmd": ["tar", "-xzf", backup_path, "-C", "/data"]
+            }
+
+            response = self.client.post(f"/containers/{container_id}/exec", json=restore_config)
+            if response.status_code != 201:
+                return {"error": "Failed to create restore exec"}
+
+            exec_id = response.json()['Id']
+            start_response = self.client.post(f"/exec/{exec_id}/start", json={"Detach": False})
+
+            if start_response.status_code == 200:
+                # Reinicia o servidor
+                await self.start_container(container_id)
+
+                return {
+                    "status": "success",
+                    "backup_name": backup_name,
+                    "message": "Backup restored and server restarted"
+                }
+            else:
+                return {"error": "Failed to restore backup"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    async def list_backups(self, container_id: str) -> Dict[str, Any]:
+        """
+        Lista backups disponíveis do servidor
+        """
+        if not self.available or not self.client:
+            return {"error": "Docker not available"}
+
+        try:
+            # Lista arquivos de backup
+            exec_config = {
+                "AttachStdout": True,
+                "AttachStderr": True,
+                "Cmd": ["sh", "-c", "ls -lh /data/backups/*.tar.gz 2>/dev/null || echo 'No backups found'"]
+            }
+
+            response = self.client.post(f"/containers/{container_id}/exec", json=exec_config)
+            if response.status_code != 201:
+                return {"error": "Failed to list backups"}
+
+            exec_id = response.json()['Id']
+            start_response = self.client.post(f"/exec/{exec_id}/start", json={"Detach": False})
+
+            if start_response.status_code == 200:
+                backups_list = start_response.text
+                return {
+                    "status": "success",
+                    "backups": backups_list
+                }
+            else:
+                return {"error": "Failed to get backup list"}
         except Exception as e:
             return {"error": str(e)}
