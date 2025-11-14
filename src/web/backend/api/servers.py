@@ -447,3 +447,124 @@ async def list_backups(server_id: str):
     return {
         "backups": result.get('backups', '')
     }
+
+@router.websocket("/deploy-cloud/{server_id}")
+async def websocket_cloud_deploy(websocket: WebSocket, server_id: str):
+    """
+    WebSocket endpoint for cloud deployment with real-time progress updates
+
+    Streams Terraform and Ansible execution progress to the client
+    """
+    await websocket.accept()
+
+    db = await get_db()
+
+    try:
+        # Get server configuration
+        cursor = await db.execute(
+            "SELECT name, server_type, version, config FROM servers WHERE id = ?",
+            (server_id,)
+        )
+        row = await cursor.fetchone()
+
+        if not row:
+            await websocket.send_json({
+                "status": "error",
+                "message": "Server not found"
+            })
+            await websocket.close()
+            return
+
+        # Parse server config
+        config = json.loads(row['config'])
+        config['id'] = server_id
+        config['name'] = row['name']
+
+        # Validate provider
+        provider = config.get('provider', 'local')
+        if provider == 'local':
+            await websocket.send_json({
+                "status": "error",
+                "message": "Local deployments should use the regular create endpoint, not cloud deployment"
+            })
+            await websocket.close()
+            return
+
+        # Update server status to deploying
+        await db.execute(
+            "UPDATE servers SET status = ?, updated_at = ? WHERE id = ?",
+            (ServerStatus.CREATING.value, datetime.now().isoformat(), server_id)
+        )
+        await db.commit()
+
+        # Send initial status
+        await websocket.send_json({
+            "status": "started",
+            "message": f"Starting cloud deployment to {provider.upper()}...",
+            "provider": provider,
+            "orchestration": config.get('orchestration', 'swarm')
+        })
+
+        # Stream deployment progress
+        final_result = None
+        async for update in deployment_service.deploy_cloud_async(config):
+            # Send update to client
+            await websocket.send_json(update)
+
+            # Save final result if deployment complete
+            if update.get('stage') == 'complete':
+                final_result = update
+
+        # Update database with final result
+        if final_result and final_result.get('status') == 'success':
+            await db.execute("""
+                UPDATE servers
+                SET status = ?,
+                    ip_address = ?,
+                    port = ?,
+                    updated_at = ?
+                WHERE id = ?
+            """, (
+                ServerStatus.RUNNING.value,
+                final_result.get('ip_address'),
+                final_result.get('port', 25565),
+                datetime.now().isoformat(),
+                server_id
+            ))
+            await db.commit()
+
+            await websocket.send_json({
+                "status": "complete",
+                "message": "Cloud deployment completed successfully!",
+                "server_ip": final_result.get('ip_address'),
+                "port": final_result.get('port', 25565)
+            })
+        else:
+            # Deployment failed
+            await db.execute(
+                "UPDATE servers SET status = ?, updated_at = ? WHERE id = ?",
+                (ServerStatus.ERROR.value, datetime.now().isoformat(), server_id)
+            )
+            await db.commit()
+
+            await websocket.send_json({
+                "status": "failed",
+                "message": "Cloud deployment failed. Check logs for details."
+            })
+
+    except Exception as e:
+        # Update server status to error
+        await db.execute(
+            "UPDATE servers SET status = ?, updated_at = ? WHERE id = ?",
+            (ServerStatus.ERROR.value, datetime.now().isoformat(), server_id)
+        )
+        await db.commit()
+
+        await websocket.send_json({
+            "status": "error",
+            "message": f"Deployment error: {str(e)}",
+            "error": str(e)
+        })
+
+    finally:
+        await websocket.close()

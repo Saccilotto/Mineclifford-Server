@@ -4,14 +4,18 @@ Serviço para deployment de servidores usando Terraform/Ansible ou Docker local
 import subprocess
 import json
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, AsyncIterator
 from web.backend.services.docker import DockerService
+from web.backend.services.terraform_executor import TerraformExecutor, TerraformStatus
+from web.backend.services.ansible_executor import AnsibleExecutor, AnsibleStatus
 
 class DeploymentService:
     def __init__(self):
         self.ansible_integration = Path(__file__).parent.parent.parent.parent / "ansible_integration.py"
         self.terraform_dir = Path(__file__).parent.parent.parent.parent / "infrastructure" / "terraform"
         self.docker_service = DockerService()
+        self.terraform_executor = TerraformExecutor()
+        self.ansible_executor = AnsibleExecutor()
 
     async def generate_vars(self, server_config: Dict[str, Any]) -> Path:
         """
@@ -61,32 +65,112 @@ class DeploymentService:
                 }
 
         else:
-            # Deployment cloud via Terraform/Ansible
-            # TODO: Implementar deployment cloud completo
-            try:
-                # 1. Gera arquivo de vars do Ansible
-                vars_file = await self.generate_vars(server_config)
+            # Deployment cloud via Terraform/Ansible - NOT SUPPORTED in sync mode
+            # Use deploy_cloud_async() for async cloud deployments
+            return {
+                "status": "error",
+                "error": "Cloud deployments must use the async API endpoint /api/servers/{id}/deploy-cloud",
+                "deployment_type": "cloud"
+            }
 
-                # 2. TODO: Executar terraform apply
-                # terraform_result = await self._run_terraform(server_config)
+    async def deploy_cloud_async(
+        self,
+        server_config: Dict[str, Any]
+    ) -> AsyncIterator[Dict[str, Any]]:
+        """
+        Deploy server to cloud (AWS/Azure) asynchronously with progress updates
 
-                # 3. TODO: Executar ansible-playbook
-                # ansible_result = await self._run_ansible(vars_file)
+        This is a streaming async generator that yields progress updates
+        Use this for cloud deployments to track progress in real-time
 
-                return {
+        Args:
+            server_config: Server configuration including:
+                - provider: 'aws' or 'azure'
+                - orchestration: 'swarm' or 'kubernetes' (default: swarm)
+                - server_names: list of server names
+                - version, memory, gamemode, difficulty, etc.
+
+        Yields:
+            Progress updates with status, message, and logs
+        """
+        provider = server_config.get('provider', 'aws')
+        orchestration = server_config.get('orchestration', 'swarm')
+        server_names = server_config.get('server_names', [server_config.get('name', 'instance1')])
+
+        if isinstance(server_names, str):
+            server_names = [server_names]
+
+        try:
+            # Stage 1: Terraform Deployment
+            outputs = {}
+
+            async for update in self.terraform_executor.deploy_full(
+                provider=provider,
+                server_names=server_names,
+                orchestration=orchestration
+            ):
+                # Forward terraform updates
+                yield {
+                    "stage": "terraform",
+                    **update
+                }
+
+                # Save outputs if successful
+                if update.get("status") == TerraformStatus.SUCCESS.value:
+                    outputs = update.get("outputs", {})
+
+            # Extract instance IPs from terraform outputs
+            instance_ips = self.terraform_executor.extract_instance_ips(outputs)
+
+            # Stage 2: Ansible Configuration (only for Swarm)
+            if orchestration == "swarm":
+                async for update in self.ansible_executor.deploy_swarm(
+                    server_config=server_config
+                ):
+                    # Forward ansible updates
+                    yield {
+                        "stage": "ansible",
+                        **update
+                    }
+
+                    # If successful, return final result with IPs
+                    if update.get("status") == AnsibleStatus.SUCCESS.value:
+                        # Get the first instance IP (manager node)
+                        first_ip = list(instance_ips.values())[0] if instance_ips else "0.0.0.0"
+
+                        yield {
+                            "stage": "complete",
+                            "status": "success",
+                            "message": "Cloud deployment completed successfully",
+                            "deployment_type": "cloud",
+                            "ip_address": first_ip,
+                            "all_ips": instance_ips,
+                            "port": 25565,
+                            "terraform_outputs": outputs
+                        }
+            else:
+                # Kubernetes - deployment handled by Terraform
+                first_ip = list(instance_ips.values())[0] if instance_ips else "0.0.0.0"
+
+                yield {
+                    "stage": "complete",
                     "status": "success",
-                    "ip_address": "0.0.0.0",  # TODO: obter do terraform
+                    "message": "Kubernetes cluster deployed successfully",
+                    "deployment_type": "cloud-k8s",
+                    "ip_address": first_ip,
+                    "all_ips": instance_ips,
                     "port": 25565,
-                    "terraform_state": {},
-                    "ansible_output": "Cloud deployment not fully implemented",
-                    "deployment_type": "cloud"
+                    "terraform_outputs": outputs
                 }
-            except Exception as e:
-                return {
-                    "status": "error",
-                    "error": str(e),
-                    "deployment_type": "cloud"
-                }
+
+        except Exception as e:
+            yield {
+                "stage": "error",
+                "status": "error",
+                "message": f"Cloud deployment failed: {str(e)}",
+                "error": str(e),
+                "deployment_type": "cloud"
+            }
 
     async def destroy_server(self, server_id: str, container_id: str = None) -> Dict[str, Any]:
         """

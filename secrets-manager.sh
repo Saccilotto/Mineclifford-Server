@@ -16,7 +16,7 @@ PASSWORD=""
 
 # Help function
 function show_help {
-    echo -e "${BLUE}CP-Planta Secrets Manager${NC}"
+    echo -e "${BLUE}Mineclifford Secrets Manager${NC}"
     echo -e "Manages encrypted secrets for the infrastructure deployment"
     echo ""
     echo -e "${YELLOW}Usage:${NC}"

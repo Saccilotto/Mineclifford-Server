@@ -82,17 +82,17 @@ if [[ "$PROVIDER" == "aws" ]]; then
         source .env
     fi
     # Create a bucket name using a consistent pattern
-    BUCKET_NAME="cp-planta-terraform-state-${AWS_ACCOUNT_ID:-$(aws sts get-caller-identity --query Account --output text)}"
+    BUCKET_NAME="mineclifford-terraform-state-${AWS_ACCOUNT_ID:-$(aws sts get-caller-identity --query Account --output text)}"
     BUCKET_REGION="${AWS_REGION:-us-east-2}"
     STATE_FILE_KEY="terraform-state/${TERRAFORM_DIR}/terraform.tfstate"
 elif [[ "$PROVIDER" == "azure" ]]; then
-    STORAGE_ACCOUNT="cpplantaterraformstate"
+    STORAGE_ACCOUNT="${AZURE_STORAGE_ACCOUNT:-minecliffordterraformstate}"
     CONTAINER_NAME="terraform-state"
     BLOB_NAME="${TERRAFORM_DIR}/terraform.tfstate"
 fi
 
 # GitHub-based storage variables
-GITHUB_REPO="Saccilotto-AGES-Projects/AGES-III-CP-Planta-Infra"
+GITHUB_REPO="${GITHUB_REPO:-mineclifford/mineclifford-server}"  # Override with env var if needed
 GITHUB_BRANCH="terraform-state"
 GITHUB_TOKEN="${GITHUB_TOKEN:-$GH_TOKEN}"
 
@@ -272,7 +272,7 @@ function save_terraform_state {
         # Add and commit the changes
         git add "${TERRAFORM_DIR}" || echo "Failed to add files"
         git config --local user.email "terraform-state@example.com" || echo "Failed to set git email"
-        git config --local user.name "CP-Planta Terraform State" || echo "Failed to set git user name"
+        git config --local user.name "Mineclifford Terraform State" || echo "Failed to set git user name"
         
         git status
         

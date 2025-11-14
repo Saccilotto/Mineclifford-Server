@@ -60,9 +60,9 @@ echo -e "${BLUE}Verifying complete destruction of resources for provider: $PROVI
 
 if [[ "$PROVIDER" == "aws" ]]; then
     echo -e "${YELLOW}Checking for AWS resources...${NC}"
-    
+
     # Check for project-specific resources by tag
-    PROJECT_TAG="cp-planta"
+    PROJECT_TAG="mineclifford"
     
     # Check VPCs
     echo -e "${BLUE}Checking for VPCs...${NC}"
@@ -329,9 +329,9 @@ if [[ "$PROVIDER" == "aws" ]]; then
 
 elif [[ "$PROVIDER" == "azure" ]]; then
     echo -e "${YELLOW}Checking for Azure resources...${NC}"
-    
+
     # Check for resource groups with the project tag/name pattern
-    PROJECT_TAG="cp-planta"
+    PROJECT_TAG="mineclifford"
     
     # Check for Resource Groups
     echo -e "${BLUE}Checking for Resource Groups...${NC}"
