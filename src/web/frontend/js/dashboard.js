@@ -8,6 +8,7 @@ class Dashboard {
         this.servers = [];
         this.pollInterval = null;
         this.pollDelay = 5000; // 5 seconds
+        this.cloudDeploy = new CloudDeploymentManager();
     }
 
     /**
@@ -173,16 +174,28 @@ class Dashboard {
      */
     async createServer(formData) {
         try {
+            const isCloudDeployment = formData.provider !== 'local';
+
             this.showNotification('Creating server...', 'info');
             const newServer = await this.api.createServer(formData);
             this.hideCreateModal();
             await this.refresh();
-            this.showNotification('Server created! Opening console...', 'success');
 
-            // Auto-open console to show deployment progress
-            setTimeout(() => {
-                this.showConsole(newServer.id);
-            }, 500);
+            if (isCloudDeployment) {
+                // Cloud deployment: Show progress modal
+                this.showNotification('Server created! Starting cloud deployment...', 'success');
+
+                setTimeout(() => {
+                    this.cloudDeploy.startDeployment(newServer.id);
+                }, 500);
+            } else {
+                // Local deployment: Show console
+                this.showNotification('Server created! Opening console...', 'success');
+
+                setTimeout(() => {
+                    this.showConsole(newServer.id);
+                }, 500);
+            }
         } catch (error) {
             this.showNotification('Failed to create server: ' + error.message, 'error');
         }
@@ -284,6 +297,12 @@ class Dashboard {
             const formData = new FormData(e.target);
             const data = Object.fromEntries(formData.entries());
             data.max_players = parseInt(data.max_players);
+
+            // Parse server_names as array (comma-separated)
+            if (data.server_names) {
+                data.server_names = data.server_names.split(',').map(s => s.trim()).filter(s => s);
+            }
+
             this.createServer(data);
         });
 
@@ -297,6 +316,16 @@ class Dashboard {
         document.getElementById('console-modal').addEventListener('click', (e) => {
             if (e.target.id === 'console-modal') {
                 this.hideConsoleModal();
+            }
+        });
+
+        document.getElementById('deployment-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'deployment-modal') {
+                // Don't allow closing while deployment is in progress
+                const closeBtn = document.getElementById('deployment-close-btn');
+                if (!closeBtn.disabled) {
+                    this.hideDeploymentModal();
+                }
             }
         });
     }
@@ -351,5 +380,26 @@ class Dashboard {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    /**
+     * Handle provider dropdown change
+     */
+    onProviderChange() {
+        const provider = document.getElementById('provider-select').value;
+        const cloudOptions = document.getElementById('cloud-options');
+
+        if (provider === 'aws' || provider === 'azure') {
+            cloudOptions.classList.remove('hidden');
+        } else {
+            cloudOptions.classList.add('hidden');
+        }
+    }
+
+    /**
+     * Hide deployment progress modal
+     */
+    hideDeploymentModal() {
+        this.cloudDeploy.hideModal();
     }
 }

@@ -182,9 +182,10 @@ https://traefik.mineclifford.com  → Traefik UI (BasicAuth required)
 | **Cloud Bridge** | 4 files | ~973 lines |
 | **Traefik Setup** | 4 files | ~342 lines |
 | **Cloudflare DNS** | 4 files | ~203 lines |
+| **Frontend UI** | 3 files | ~350 lines |
 | **Scripts Fixed** | 4 files | ~12 lines changed |
-| **Documentation** | 3 files | ~450 lines |
-| **Total** | **19 files** | **~1,980 lines** |
+| **Documentation** | 3 files | ~650 lines |
+| **Total** | **22 files** | **~2,530 lines** |
 
 ### Test Coverage:
 
@@ -277,6 +278,145 @@ ws.onmessage = (event) => {
 
 **Recommendation**: Start with **Option A** for alpha, implement **Option C** for production.
 
+### Part 5: Frontend Cloud Deployment UI ✅
+
+**Purpose**: Enable users to deploy cloud servers directly from the web dashboard with real-time progress tracking.
+
+**Solution**: Added complete UI for cloud deployment with provider selection, orchestration options, and live WebSocket progress updates.
+
+#### Files Created/Modified:
+
+1. **[src/web/frontend/js/cloud-deploy.js](src/web/frontend/js/cloud-deploy.js)** (279 lines) - NEW
+   - `CloudDeploymentManager` class for WebSocket deployment tracking
+   - Real-time progress updates with stage indicators
+   - Terraform and Ansible stage tracking with visual feedback
+   - Animated progress indicators (pending → in progress → success/error)
+   - Scrolling log viewer for deployment output
+   - Final result display with server IP address
+
+2. **[src/web/frontend/index.html](src/web/frontend/index.html)** - Enhanced
+   - Added provider selection dropdown (Local/AWS/Azure)
+   - Cloud deployment options panel (orchestration, server names)
+   - Deployment progress modal with:
+     - Status indicator
+     - Stage progress (Terraform, Ansible)
+     - Live log stream
+     - Final server address display
+   - Script inclusion for cloud-deploy.js
+
+3. **[src/web/frontend/js/dashboard.js](src/web/frontend/js/dashboard.js)** - Enhanced
+   - Integrated `CloudDeploymentManager`
+   - `onProviderChange()` - Show/hide cloud options based on provider
+   - `hideDeploymentModal()` - Close deployment progress modal
+   - Modified `createServer()` - Different flow for cloud vs local
+   - Enhanced `setupEventListeners()` - Parse server_names as array
+   - Cloud deployments → Show progress modal
+   - Local deployments → Show console (existing behavior)
+
+#### How It Works (User Flow):
+
+```
+1. User clicks "New Server" button
+
+2. Create Server Form:
+   ┌─────────────────────────────┐
+   │ Server Name: my-aws-server  │
+   │ Server Type: Paper          │
+   │ Version: 1.20.1             │
+   │ Memory: 2GB                 │
+   │ Provider: [AWS Cloud ▼]     │  ← Triggers cloud options
+   │                             │
+   │ ⚠️ Cloud Deployment Options  │  ← Shows when AWS/Azure selected
+   │ Orchestration: Swarm        │
+   │ Server Names: instance1     │
+   │                             │
+   │ Note: Cloud deployment will │
+   │ execute Terraform + Ansible │
+   └─────────────────────────────┘
+
+3. Click "Create" → POST /api/servers/ → Server record created in DB
+
+4. If provider = AWS/Azure:
+
+   WebSocket connection opens: ws://api.mineclifford.com/api/servers/deploy-cloud/{id}
+
+   Deployment Progress Modal appears:
+   ┌───────────────────────────────────────┐
+   │ Cloud Deployment Progress        [✗] │
+   ├───────────────────────────────────────┤
+   │ Status: Applying infrastructure...    │
+   │                                       │
+   │ ⏳ Terraform Infrastructure           │
+   │    In Progress...                     │
+   │                                       │
+   │ ⏸ Ansible Configuration              │
+   │    Pending                            │
+   │                                       │
+   │ Deployment Logs:                      │
+   │ ┌─────────────────────────────────┐  │
+   │ │[TERRAFORM] terraform init...    │  │
+   │ │[TERRAFORM] terraform plan...    │  │
+   │ │[TERRAFORM] terraform apply...   │  │  ← Live streaming
+   │ │[ANSIBLE] Testing connectivity   │  │
+   │ │[ANSIBLE] Running playbook...    │  │
+   │ └─────────────────────────────────┘  │
+   │                                       │
+   │ Server Address:                       │
+   │ 3.142.156.78:25565                   │
+   └───────────────────────────────────────┘
+
+5. User sees real-time logs as Terraform and Ansible execute
+
+6. Final result shows server IP for connection
+```
+
+#### Frontend Features:
+
+| Feature | Status | Description |
+|---------|--------|-------------|
+| **Provider Selection** | ✅ | Local Docker / AWS / Azure dropdown |
+| **Cloud Options** | ✅ | Orchestration type (Swarm/K8s) |
+| **Multi-Instance** | ✅ | Server names comma-separated |
+| **WebSocket Progress** | ✅ | Live streaming deployment updates |
+| **Stage Indicators** | ✅ | Visual progress for Terraform/Ansible |
+| **Animated Icons** | ✅ | Spinning loader → checkmark/error |
+| **Log Viewer** | ✅ | Auto-scrolling deployment logs |
+| **Error Handling** | ✅ | Shows error stage with details |
+| **Result Display** | ✅ | Final server IP address |
+| **Modal Lock** | ✅ | Can't close during deployment |
+
+#### Demo Screenshots (Conceptual):
+
+**Create Modal - Cloud Selected:**
+```
+┌──────────────────────────────────┐
+│ Create New Server                │
+├──────────────────────────────────┤
+│ Provider: [AWS Cloud ▼]          │ ← Changes to AWS/Azure
+│                                  │
+│ ⚠️ Cloud Deployment Options      │ ← Appears dynamically
+│ ┌────────────────────────────┐  │
+│ │ Orchestration: Swarm       │  │
+│ │ Server Names: instance1... │  │
+│ └────────────────────────────┘  │
+└──────────────────────────────────┘
+```
+
+**Progress Modal - Terraform Stage:**
+```
+Status: Creating execution plan...
+
+✓ Terraform Infrastructure ← Completed
+   Completed
+
+⏳ Ansible Configuration  ← In progress
+   In Progress...
+
+[TERRAFORM] Apply complete! Resources: 5 added
+[ANSIBLE] Testing connectivity to 3.142.156.78...
+[ANSIBLE] PLAY [Configure Minecraft Server]
+```
+
 ---
 
 ## ⏭️ Next Steps
@@ -289,18 +429,19 @@ ws.onmessage = (event) => {
    - [ ] Test BasicAuth login
    - [ ] Verify SSL certificates
 
-2. **Test Cloud Deployment**
-   - [ ] Create test server via dashboard
-   - [ ] Monitor WebSocket progress
-   - [ ] Verify Terraform execution
-   - [ ] Verify Ansible configuration
-   - [ ] Connect to deployed Minecraft server
+2. **Test Cloud Deployment** 🆕
+   - [ ] Start web dashboard
+   - [ ] Create server with provider="aws"
+   - [ ] Watch WebSocket progress in real-time
+   - [ ] Verify Terraform executes
+   - [ ] Verify Ansible configures
+   - [ ] Connect to deployed server IP
 
-3. **Frontend Enhancements**
-   - [ ] Add "Deploy to Cloud" button UI
-   - [ ] Show real-time deployment logs
-   - [ ] Display Terraform/Ansible progress
-   - [ ] Add credential input form (Option A)
+3. **~~Frontend Enhancements~~** ✅ **COMPLETED**
+   - [x] Add "Deploy to Cloud" provider selection
+   - [x] Show real-time deployment logs
+   - [x] Display Terraform/Ansible progress
+   - [x] Cloud options (orchestration, server names)
 
 ### Short-Term (Beta):
 
@@ -344,13 +485,19 @@ mineclifford-server/
 ├── docker-compose.traefik.yml      # ✨ NEW - Production deployment
 ├── docker-compose.web.yml          # Existing - Local development
 │
-├── src/web/backend/
-│   ├── api/
-│   │   └── servers.py              # ✨ +121 lines (WebSocket endpoint)
-│   └── services/
-│       ├── terraform_executor.py   # ✨ NEW - 379 lines
-│       ├── ansible_executor.py     # ✨ NEW - 289 lines
-│       └── deployment.py           # ✨ Modified - Cloud bridge
+├── src/web/
+│   ├── backend/
+│   │   ├── api/
+│   │   │   └── servers.py              # ✨ +121 lines (WebSocket endpoint)
+│   │   └── services/
+│   │       ├── terraform_executor.py   # ✨ NEW - 379 lines
+│   │       ├── ansible_executor.py     # ✨ NEW - 289 lines
+│   │       └── deployment.py           # ✨ Modified - Cloud bridge
+│   └── frontend/
+│       ├── index.html                  # ✨ Enhanced - Provider selection, progress modal
+│       └── js/
+│           ├── cloud-deploy.js         # ✨ NEW - 279 lines (WebSocket progress)
+│           └── dashboard.js            # ✨ Modified - Cloud integration
 │
 ├── terraform/
 │   ├── cloudflare/                 # ✨ NEW - DNS management
@@ -390,26 +537,30 @@ mineclifford-server/
 3. ✅ **SSL Automation**: Let's Encrypt certificates via Cloudflare DNS challenge
 4. ✅ **DNS Management**: Terraform module for Cloudflare configuration
 5. ✅ **Script Fixes**: Removed legacy "cp-planta" tags
+6. ✅ **Frontend UI**: Complete cloud deployment interface with real-time progress
 
 **What's Ready:**
 
 - 🚀 Alpha deployment to mineclifford.com
-- 🚀 Cloud server provisioning (AWS/Azure)
-- 🚀 Real-time deployment progress tracking
+- 🚀 Cloud server provisioning (AWS/Azure) via web dashboard
+- 🚀 Real-time deployment progress tracking via WebSocket
 - 🚀 Secure HTTPS with automatic certificates
+- 🚀 Interactive UI with provider selection and live logs
+- 🚀 Local Docker deployments (existing feature, still works)
 
 **What's Next:**
 
-- ⏭️ Deploy and test
-- ⏭️ Implement user authentication
-- ⏭️ Add frontend cloud deployment UI
-- ⏭️ Setup monitoring/alerting
-- ⏭️ Build billing system
+- ⏭️ Deploy and test end-to-end
+- ⏭️ Implement user authentication (JWT)
+- ⏭️ Setup monitoring/alerting (Prometheus/Grafana)
+- ⏭️ Build billing system (Stripe)
+- ⏭️ Add advanced features (auto-scaling, backups to S3, etc.)
 
 **Estimated Progress**:
 - **Phase 5 (Cloud Bridge)**: 100% ✅
-- **Alpha Deployment**: 95% (needs testing)
-- **Production SaaS**: 40% (auth, billing, monitoring remaining)
+- **Frontend UI**: 100% ✅
+- **Alpha Deployment**: 98% (ready for testing)
+- **Production SaaS**: 45% (auth, billing, monitoring remaining)
 
 ---
 
