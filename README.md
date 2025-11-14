@@ -1,265 +1,266 @@
 # Mineclifford
 
-![Mineclifford Logo](docs/images/logo.png)
-
-[![License: GNU 3 AFFERO](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Terraform](https://img.shields.io/badge/terraform-%235835CC.svg?style=for-the-badge&logo=terraform&logoColor=white)](https://www.terraform.io/)
-[![Kubernetes](https://img.shields.io/badge/kubernetes-%23326ce5.svg?style=for-the-badge&logo=kubernetes&logoColor=white)](https://kubernetes.io/)
-[![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=flat&logo=docker&logoColor=white)](https://www.docker.com/)
+[![Terraform](https://img.shields.io/badge/terraform-%235835CC.svg?style=flat&logo=terraform&logoColor=white)](https://www.terraform.io/)
 
 ## Overview
 
-Mineclifford is an automated provisioning and management tool for Minecraft servers on cloud infrastructure. It enables easy deployment, monitoring, and maintenance of Minecraft servers (both Java and Bedrock editions) on AWS and Azure, using either Docker Swarm or Kubernetes as the orchestration layer.
+**Mineclifford** is a web-based platform for deploying and managing Minecraft servers. Deploy locally via Docker or to cloud infrastructure (AWS/Azure) with automated provisioning, monitoring, and SSL configuration.
 
 ## Features
 
-- **Multiple cloud providers**: AWS and Azure support
-- **Multiple orchestration options**: Docker Swarm, Kubernetes, or local Docker
-- **Support for both editions**: Java and Bedrock Minecraft
-- **Flexible configuration**: Version, game mode, difficulty, and more
-- **Infrastructure as code**: Terraform-based provisioning
-- **Configuration automation**: Ansible for server configuration
-- **Integrated monitoring**: Prometheus and Grafana dashboards
-- **Scheduled backups**: Automated daily backups of world data
-- **State management**: Consistent state handling across providers
-- **Scalable architecture**: Support for multiple server instances
+### Web Dashboard
+
+- **Real-time management** via browser interface
+- **Live console** with WebSocket streaming
+- **Server status** monitoring with auto-refresh
+- **One-click deployment** to local Docker or cloud providers
+
+### Cloud Deployment
+
+- **Multi-cloud support**: AWS and Azure with Terraform automation
+- **Orchestration options**: Docker Swarm or Kubernetes
+- **Real-time progress**: Watch infrastructure provisioning and configuration via WebSocket
+- **DNS management**: Cloudflare integration for automatic domain setup
+- **SSL/TLS**: Let's Encrypt certificates via DNS challenge
+
+### Server Types
+
+- **Java Edition**: Paper, Vanilla, Spigot, Forge, Fabric
+- **Bedrock Edition**: Official server support
+- **Version flexibility**: Automatic version management and downloads
+
+### Infrastructure
+
+- **Terraform**: Automated cloud resource provisioning
+- **Ansible**: Server configuration and deployment automation
+- **Docker**: Containerized server instances
+- **Monitoring**: Prometheus and Grafana (optional)
 
 ## Architecture
 
-![Architecture Diagram](docs/images/architecture.png)
+```plaintext
+┌─────────────────────────────────────────────────────┐
+│               Web Dashboard (Browser)               │
+│  • Create/manage servers  • Live console  • Status  │
+└────────────────────┬────────────────────────────────┘
+                     │
+          ┌──────────▼──────────┐
+          │   Nginx Reverse     │
+          │       Proxy         │
+          └──────────┬──────────┘
+                     │
+        ┌────────────┴────────────┐
+        │                         │
+┌───────▼─────────┐      ┌────────▼────────┐
+│ FastAPI Backend │      │ Frontend (HTML/ │
+│  • REST API     │      │  JS/Tailwind)   │
+│  • WebSocket    │      └─────────────────┘
+│  • Docker API   │
+└────────┬────────┘
+         │
+    ┌────┴────┐
+    │         │
+┌───▼──┐  ┌──▼────────────────────┐
+│Local │  │  Cloud Deployment     │
+│Docker│  │  ┌─────────────────┐  │
+│Servers│  │ │Terraform (IaC)  │  │
+└──────┘  │  │ • AWS/Azure     │  │
+          │  └────────┬────────┘  │
+          │           │           │
+          │  ┌────────▼────────┐  │
+          │  │Ansible (Config) │  │
+          │  │ • Docker Swarm  │  │
+          │  │ • Kubernetes    │  │
+          │  └────────┬────────┘  │
+          │           │           │
+          │  ┌────────▼────────┐  │
+          │  │ Cloud Minecraft │  │
+          │  │    Servers      │  │
+          │  └─────────────────┘  │
+          └───────────────────────┘
+```
 
-The diagram is organized into four primary layers:
+**Components:**
 
-1. **Infrastructure Layer** - Shows the cloud providers supported by the system:
-   - AWS: Provisions EC2 instances, VPC, security groups, and EKS clusters
-   - Azure: Deploys virtual machines, VNETs, NSGs, and AKS clusters
-
-2. **Orchestration Layer** - Presents the container orchestration options:
-   - Docker Swarm: For simpler deployments with service orchestration
-   - Kubernetes: For more complex, scalable deployments
-   - Local Docker: For development and testing
-
-3. **Application Layer** - Displays the core application components:
-   - Minecraft Java Server: Using the itzg/minecraft-server container
-   - Minecraft Bedrock Server: Using the itzg/minecraft-bedrock-server container
-   - RCON Web Admin: For server management
-
-4. **Monitoring Layer** - Shows the monitoring stack:
-   - Prometheus: For metrics collection and alerting
-   - Grafana: For visualization and dashboards
-   - Exporters & Agents: For collecting metrics from various sources
-
-At the top, the diagram also shows the automation tools used throughout the system:
-
-- Terraform: For infrastructure provisioning
-- Ansible: For configuration management
-- Kustomize: For Kubernetes configuration
-- Shell Scripts: For automation and orchestration
-
-The connecting lines indicate relationships between components, with solid lines showing direct dependencies and dashed lines showing optional paths.
-
-This architecture provides a comprehensive visualization of your multi-cloud, multi-orchestration Minecraft server deployment system, showcasing its flexibility and modularity.
-
-### Components
-
-1. **Infrastructure Layer**:
-   - AWS (EC2, VPC, Security Groups, etc.)
-   - Azure (VM, VNET, NSG, etc.)
-
-2. **Orchestration Layer**:
-   - Docker Swarm for simpler deployments
-   - Kubernetes for more complex, scalable deployments
-   - Local Docker for development and testing
-
-3. **Application Layer**:
-   - Minecraft Java Server
-   - Minecraft Bedrock Server
-   - RCON Web Admin
-
-4. **Monitoring Layer**:
-   - Prometheus for metrics collection
-   - Grafana for visualization
-   - Node Exporter for host metrics
-   - Minecraft Exporter for game metrics
+- **Web Dashboard**: Browser-based UI for server management with real-time updates
+- **Backend API**: FastAPI service handling requests, Docker orchestration, and cloud deployments
+- **Local Deployment**: Direct Docker container creation for development/testing
+- **Cloud Deployment**: Automated Terraform → Ansible pipeline for AWS/Azure infrastructure
+- **Monitoring**: Optional Prometheus/Grafana stack for metrics and dashboards
 
 ## Prerequisites
 
-To use Mineclifford, you need:
+### For Local Development
 
-1. **Required CLI tools**:
-   - Terraform v1.0.0+
-   - Ansible v2.9+
-   - Docker and Docker Compose
-   - kubectl (for Kubernetes deployments)
-   - AWS CLI (for AWS deployments)
-   - Azure CLI (for Azure deployments)
+- Docker and Docker Compose
+- Git
 
-2. **Cloud provider credentials**:
-   - AWS: Configure using `aws configure` or environment variables
-   - Azure: Configure using `az login`
+### For Cloud Deployments (Optional)
 
-3. **Environment setup**:
-   - Clone this repository
-   - Create a `.env` file with required variables (see `.env.example`)
+- **Terraform** v1.0+ (for infrastructure provisioning)
+- **Ansible** v2.9+ (for server configuration)
+- **Cloud credentials**: AWS (via `aws configure`) or Azure (via `az login`)
+- **SSH key pair**: For connecting to cloud instances
+
+### For Production Deployment
+
+- **Domain**: Managed by Cloudflare (for DNS/SSL automation)
+- **Cloudflare API token**: With DNS edit permissions
 
 ## Quick Start
 
-### Using the Unified Operations Script
-
-The `minecraft-ops.sh` script provides a unified interface for all operations:
+### Option 1: Web Dashboard (Recommended)
 
 ```bash
-# Deploy with Docker Swarm on AWS
-./minecraft-ops.sh deploy --provider aws --orchestration swarm
+# Clone repository
+git clone https://github.com/yourusername/mineclifford.git
+cd mineclifford
 
-# Deploy with Kubernetes on Azure
-./minecraft-ops.sh deploy --provider azure --orchestration kubernetes --k8s aks
+# Copy environment template
+cp .env.example .env
 
+# Start web dashboard
+docker compose -f docker-compose.web.yml up -d
+
+# Access at http://localhost
+# API docs at http://localhost/docs
+```
+
+Use the web interface to:
+
+1. Click "New Server"
+2. Choose provider (Local Docker, AWS, or Azure)
+3. Configure server settings
+4. Watch real-time deployment progress
+5. Access live console when ready
+
+### Option 2: CLI Operations
+
+```bash
 # Deploy locally for testing
 ./minecraft-ops.sh deploy --orchestration local
 
-# Check deployment status
-./minecraft-ops.sh status --provider aws --orchestration swarm
+# Deploy to AWS with Docker Swarm
+./minecraft-ops.sh deploy --provider aws --orchestration swarm
+
+# Deploy to Azure with Kubernetes
+./minecraft-ops.sh deploy --provider azure --orchestration kubernetes
+
+# Check status
+./minecraft-ops.sh status --provider aws
 
 # Destroy infrastructure
-./minecraft-ops.sh destroy --provider aws --orchestration swarm
-```
-
-### Customizing Your Deployment
-
-You can customize your Minecraft server by specifying options:
-
-```bash
-./minecraft-ops.sh deploy \
-  --provider aws \
-  --orchestration swarm \
-  --minecraft-version 1.19 \
-  --mode creative \
-  --difficulty peaceful \
-  --memory 4G
+./minecraft-ops.sh destroy --provider aws
 ```
 
 ## Configuration
 
 ### Environment Variables
 
-Create a `.env` file with the following variables:
+Copy `.env.example` to `.env` and configure:
 
 ```env
-# AWS Configuration (for AWS provider)
-AWS_ACCESS_KEY_ID=your_aws_access_key
-AWS_SECRET_ACCESS_KEY=your_aws_secret_key
+# Cloud Credentials (optional, for cloud deployments)
+AWS_ACCESS_KEY_ID=your_aws_key
+AWS_SECRET_ACCESS_KEY=your_aws_secret
 AWS_REGION=us-east-2
 
-# Azure Configuration (for Azure provider)
-AZURE_SUBSCRIPTION_ID=your_azure_subscription_id
+AZURE_SUBSCRIPTION_ID=your_azure_id
 
-# Minecraft Configuration
+# Cloudflare (for production with SSL)
+CF_API_EMAIL=admin@example.com
+CF_API_TOKEN=your_cloudflare_token
+DOMAIN_NAME=yourdomain.com
+ACME_EMAIL=admin@yourdomain.com
+
+# Server Defaults
 MINECRAFT_VERSION=latest
 MINECRAFT_GAMEMODE=survival
 MINECRAFT_DIFFICULTY=normal
 MINECRAFT_MEMORY=2G
+TZ=UTC
 ```
 
-For more configuration options, see [Configuration Guide](docs/configuration.md).
+See `.env.example` for all available options.
 
-### Terraform Variables
+## Monitoring (Optional)
 
-The infrastructure can be customized through Terraform variables:
+Optional Prometheus and Grafana stack for server metrics:
 
-- `project_name`: Name of the deployment (default: mineclifford)
-- `region`: AWS region or Azure location
-- `instance_type`: VM size/type
-- `server_names`: List of server instance names
+- **Prometheus**: Collects server resource and Minecraft-specific metrics
+- **Grafana**: Visualizes dashboards for resource usage and player activity
+- **Node Exporter**: System-level metrics
 
-See [Terraform Variables Guide](docs/terraform-variables.md) for more details.
+Access Grafana at `http://server-ip:3000` (default: admin/admin)
 
-## Monitoring
+## Production Deployment
 
-Mineclifford includes a comprehensive monitoring solution:
-
-- **Metrics Collection**:
-  - Server resource usage (CPU, memory, network)
-  - Minecraft-specific metrics (players, TPS, etc.)
-  
-- **Dashboards**:
-  - Resource utilization
-  - Player activity
-  - Performance bottlenecks
-
-- **Alerting**:
-  - Server downtime
-  - Resource constraints
-  - Backup failures
-
-Access Grafana dashboards at:
-
-- Docker Swarm: [http://server-ip:3000](http://server-ip:3000)
-
-- Kubernetes: <http://grafana.your-domain.com>
-
-Default credentials: admin/admin (change on first login)
-
-## Backups
-
-Daily backups are configured automatically:
-
-- **Docker Swarm**: Backups stored in `/home/ubuntu/minecraft-backups`
-- **Kubernetes**: Volumes backed up using PVC snapshots
-
-To manually trigger a backup:
+Deploy with Traefik reverse proxy, SSL, and BasicAuth protection:
 
 ```bash
-# For Docker Swarm
-ssh user@server-ip "/home/ubuntu/backup-minecraft.sh"
+# 1. Setup Cloudflare DNS
+cd terraform/cloudflare
+terraform apply -var="platform_ip=YOUR_SERVER_IP"
 
-# For Kubernetes
-kubectl exec -n mineclifford deploy/minecraft-java -- rcon-cli save-all
+# 2. Generate BasicAuth password
+./scripts/generate-basicauth.sh admin YourPassword
+
+# 3. Configure .env with credentials
+
+# 4. Deploy platform
+docker compose -f docker-compose.traefik.yml up -d
 ```
 
-## Advanced Usage
+Access at `https://yourdomain.com` with BasicAuth credentials.
 
-### Multi-Server Deployment
+See [docs/DEPLOYMENT-TRAEFIK.md](docs/DEPLOYMENT-TRAEFIK.md) for details.
 
-To deploy multiple Minecraft servers:
+## Testing Cloud Deployment
+
+Test the complete cloud deployment workflow locally:
 
 ```bash
-./minecraft-ops.sh deploy \
-  --provider aws \
-  --orchestration swarm \
-  --server-names "survival,creative,adventure"
+# Start dashboard
+docker compose -f docker-compose.web.yml up -d
+
+# Open http://localhost and create a cloud server
+# Watch real-time Terraform and Ansible progress
 ```
 
-### Custom Mods and Plugins
+See [docs/TESTING-CLOUD-DEPLOYMENT.md](docs/TESTING-CLOUD-DEPLOYMENT.md) for detailed testing guide.
 
-To add custom mods or plugins, see [Customization Guide](docs/customization.md).
+## Project Structure
 
-### Custom Domain and SSL
-
-To set up a custom domain with SSL:
-
-```bash
-./minecraft-ops.sh deploy \
-  --provider aws \
-  --orchestration swarm \
-  --domain your-domain.com \
-  --email your-email@example.com
+```plaintext
+mineclifford/
+├── src/web/              # Web dashboard (FastAPI + HTML/JS)
+├── terraform/            # Infrastructure as code (AWS/Azure/Cloudflare)
+├── deployment/           # Ansible playbooks and Docker configs
+├── docker/               # Dockerfiles and configs
+├── scripts/              # Utility scripts
+└── docs/                 # Documentation
 ```
 
-## Troubleshooting
+## Documentation
 
-Common issues and solutions are documented in [Troubleshooting Guide](docs/troubleshooting.md).
+- [Web Dashboard README](src/web/README.md) - Dashboard architecture and API
+- [Cloudflare DNS Setup](terraform/cloudflare/README.md) - DNS management
+- [Traefik Deployment](docs/DEPLOYMENT-TRAEFIK.md) - Production deployment guide
+- [Testing Guide](docs/TESTING-CLOUD-DEPLOYMENT.md) - Cloud deployment testing
 
 ## Contributing
 
-Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTING.md) before submitting a pull request.
+Contributions welcome! Open an issue or submit a pull request.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT License - see [LICENSE](LICENSE) file.
 
-## Acknowledgments
+## Credits
 
-- [itzg/docker-minecraft-server](https://github.com/itzg/docker-minecraft-server) for the Docker images
-- [Prometheus](https://prometheus.io/) and [Grafana](https://grafana.com/) for monitoring
-- [Terraform](https://www.terraform.io/) and [Ansible](https://www.ansible.com/) for automation
+- [itzg/docker-minecraft-server](https://github.com/itzg/docker-minecraft-server) - Docker images
+- [Terraform](https://www.terraform.io/) - Infrastructure provisioning
+- [Ansible](https://www.ansible.com/) - Configuration automation
+- [FastAPI](https://fastapi.tiangolo.com/) - Backend framework

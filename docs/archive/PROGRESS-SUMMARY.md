@@ -13,7 +13,8 @@
 
 **Solution**: Updated all scripts to use "mineclifford" tags consistently.
 
-#### Files Modified:
+#### Files Modified
+
 - ✅ [verify-destruction.sh](verify-destruction.sh) - Lines 65, 334
 - ✅ [save-terraform-state.sh](save-terraform-state.sh) - Lines 85, 89, 95, 275
 - ✅ [secrets-manager.sh](secrets-manager.sh) - Line 19
@@ -29,7 +30,7 @@
 
 **Solution**: Built complete async pipeline connecting web dashboard → Terraform → Ansible → Cloud servers.
 
-#### New Services Created:
+#### New Services Created
 
 1. **[terraform_executor.py](src/web/backend/services/terraform_executor.py)** (379 lines)
    - `deploy_full()` - Complete infrastructure provisioning with streaming progress
@@ -54,9 +55,9 @@
    - Updates database with server IP on successful deployment
    - Error handling with rollback on failure
 
-#### How It Works:
+#### How It Works
 
-```
+```plaintext
 User clicks "Deploy to AWS" in dashboard
          ↓
 WebSocket connection established (/api/servers/deploy-cloud/{id})
@@ -93,7 +94,7 @@ User sees: "Cloud deployment completed successfully!"
 
 **Solution**: Traefik reverse proxy with HTTP BasicAuth, Let's Encrypt SSL, and Cloudflare DNS challenge.
 
-#### Files Created:
+#### Files Created
 
 1. **[docker-compose.traefik.yml](docker-compose.traefik.yml)** (254 lines)
    - Traefik v2.10 with Cloudflare DNS challenge
@@ -119,7 +120,7 @@ User sees: "Cloud deployment completed successfully!"
    - Troubleshooting section
    - Migration path to remove BasicAuth later
 
-#### Security Features:
+#### Security Features
 
 | Feature | Status | Details |
 |---------|--------|---------|
@@ -131,9 +132,9 @@ User sees: "Cloud deployment completed successfully!"
 | **DDoS Protection** | ✅ Cloudflare | Free tier protection |
 | **Rate Limiting** | ⏭️ Planned | Needs Business plan or custom middleware |
 
-#### Protected Endpoints:
+#### Protected Endpoints
 
-```
+```plaintext
 https://mineclifford.com          → Dashboard (BasicAuth required)
 https://api.mineclifford.com      → API (BasicAuth required)
 https://traefik.mineclifford.com  → Traefik UI (BasicAuth required)
@@ -147,7 +148,7 @@ https://traefik.mineclifford.com  → Traefik UI (BasicAuth required)
 
 **Purpose**: Automate DNS configuration for mineclifford.com with proper security settings.
 
-#### Files Created:
+#### Files Created on Cloudflare Module
 
 1. **[terraform/cloudflare/main.tf](terraform/cloudflare/main.tf)** (155 lines)
    - DNS records: `@`, `api`, `traefik`, `*.servers`
@@ -159,7 +160,7 @@ https://traefik.mineclifford.com  → Traefik UI (BasicAuth required)
 3. **[terraform/cloudflare/outputs.tf](terraform/cloudflare/outputs.tf)** (27 lines)
 4. **[terraform/cloudflare/README.md](terraform/cloudflare/README.md)** (Complete guide)
 
-#### DNS Records Created:
+#### DNS Records Created
 
 | Record | Type | Proxied | Purpose |
 |--------|------|---------|---------|
@@ -175,7 +176,7 @@ https://traefik.mineclifford.com  → Traefik UI (BasicAuth required)
 
 ## 📊 Project Statistics
 
-### Lines of Code Added/Modified:
+### Lines of Code Added/Modified
 
 | Category | Files | Lines |
 |----------|-------|-------|
@@ -187,7 +188,7 @@ https://traefik.mineclifford.com  → Traefik UI (BasicAuth required)
 | **Documentation** | 3 files | ~650 lines |
 | **Total** | **22 files** | **~2,530 lines** |
 
-### Test Coverage:
+### Test Coverage
 
 - ✅ Script tag fixes: Verified with `bash verify-destruction.sh`
 - ⏳ Cloud deployment: Ready for manual testing
@@ -198,7 +199,7 @@ https://traefik.mineclifford.com  → Traefik UI (BasicAuth required)
 
 ## 🚀 Ready for Alpha Deployment
 
-### Prerequisites Checklist:
+### Prerequisites Checklist
 
 - [ ] **Domain**: mineclifford.com configured in Cloudflare
 - [ ] **Cloudflare API Token**: Created with DNS:Edit permissions
@@ -206,7 +207,7 @@ https://traefik.mineclifford.com  → Traefik UI (BasicAuth required)
 - [ ] **AWS/Azure Credentials**: For cloud deployments (optional for testing)
 - [ ] **SSH Key**: Generated and added to cloud providers
 
-### Quick Start:
+### Quick Start
 
 ```bash
 # 1. Generate BasicAuth credentials
@@ -231,7 +232,7 @@ https://api.mineclifford.com/docs  # API docs
 https://traefik.mineclifford.com  # Traefik UI
 ```
 
-### Testing Cloud Deployment:
+### Testing Cloud Deployment
 
 ```javascript
 // Frontend: Connect to cloud deployment WebSocket
@@ -257,12 +258,14 @@ ws.onmessage = (event) => {
 **Options Under Consideration**:
 
 ### Option A: Session-Only (High Security, Lower UX)
+
 - ✅ User enters credentials each deployment
 - ✅ Never stored in database
 - ❌ Must re-enter every time
 - **Use Case**: Ultra-secure, manual deployments
 
 ### Option B: Checkbox "Remember Credentials" (Balanced)
+
 - ✅ User opts-in to storage
 - ✅ Credentials encrypted at rest (AES-256)
 - ✅ Stored per-user with expiration
@@ -270,6 +273,7 @@ ws.onmessage = (event) => {
 - **Use Case**: Frequent deployments, trusted environment
 
 ### Option C: OAuth/IAM Role Assumption (Best Practice)
+
 - ✅ No credential storage needed
 - ✅ Short-lived tokens via OAuth
 - ✅ Can be revoked anytime
@@ -284,7 +288,7 @@ ws.onmessage = (event) => {
 
 **Solution**: Added complete UI for cloud deployment with provider selection, orchestration options, and live WebSocket progress updates.
 
-#### Files Created/Modified:
+#### Files Created/Modified
 
 1. **[src/web/frontend/js/cloud-deploy.js](src/web/frontend/js/cloud-deploy.js)** (279 lines) - NEW
    - `CloudDeploymentManager` class for WebSocket deployment tracking
@@ -313,9 +317,9 @@ ws.onmessage = (event) => {
    - Cloud deployments → Show progress modal
    - Local deployments → Show console (existing behavior)
 
-#### How It Works (User Flow):
+#### How It Works (User Flow)
 
-```
+```plaintext
 1. User clicks "New Server" button
 
 2. Create Server Form:
@@ -370,7 +374,7 @@ ws.onmessage = (event) => {
 6. Final result shows server IP for connection
 ```
 
-#### Frontend Features:
+#### Frontend Features
 
 | Feature | Status | Description |
 |---------|--------|-------------|
@@ -385,10 +389,11 @@ ws.onmessage = (event) => {
 | **Result Display** | ✅ | Final server IP address |
 | **Modal Lock** | ✅ | Can't close during deployment |
 
-#### Demo Screenshots (Conceptual):
+#### Demo Screenshots (Conceptual)
 
 **Create Modal - Cloud Selected:**
-```
+
+```plaintext
 ┌──────────────────────────────────┐
 │ Create New Server                │
 ├──────────────────────────────────┤
@@ -403,7 +408,8 @@ ws.onmessage = (event) => {
 ```
 
 **Progress Modal - Terraform Stage:**
-```
+
+```plaintext
 Status: Creating execution plan...
 
 ✓ Terraform Infrastructure ← Completed
@@ -421,7 +427,7 @@ Status: Creating execution plan...
 
 ## ⏭️ Next Steps
 
-### Immediate (Alpha Testing):
+### Immediate (Alpha Testing)
 
 1. **Deploy Platform**
    - [ ] Setup Cloudflare DNS
@@ -443,43 +449,48 @@ Status: Creating execution plan...
    - [x] Display Terraform/Ansible progress
    - [x] Cloud options (orchestration, server names)
 
-### Short-Term (Beta):
+### Short-Term (Beta)
 
-4. **User Authentication**
-   - [ ] Remove BasicAuth
-   - [ ] Implement JWT authentication
-   - [ ] Add user registration/login
-   - [ ] Multi-tenant database schema
+4.**User Authentication**
 
-5. **Monitoring & Observability**
-   - [ ] Integrate Prometheus metrics
-   - [ ] Setup Grafana dashboards
-   - [ ] Add logging aggregation (Loki/ELK)
-   - [ ] Alert on deployment failures
+- [ ] Remove BasicAuth
+- [ ] Implement JWT authentication
+- [ ] Add user registration/login
+- [ ] Multi-tenant database schema
 
-6. **Billing System**
-   - [ ] Stripe integration
-   - [ ] Usage metering (servers, hours)
-   - [ ] Subscription plans (Free, Pro, Enterprise)
+5.**Monitoring & Observability**
 
-### Long-Term (Production):
+- [ ] Integrate Prometheus metrics
+- [ ] Setup Grafana dashboards
+- [ ] Add logging aggregation (Loki/ELK)
+- [ ] Alert on deployment failures
 
-7. **Monorepo Restructure**
-   - [ ] Move to `apps/` + `packages/` structure
-   - [ ] Setup Nx/Turborepo
-   - [ ] Unified CI/CD pipeline
+6.**Billing System**
 
-8. **Advanced Features**
-   - [ ] Auto-scaling for user servers
-   - [ ] Backup to S3/Azure Blob
-   - [ ] Plugin marketplace
-   - [ ] Team/organization support
+- [ ] Stripe integration
+- [ ] Usage metering (servers, hours)
+- [ ] Subscription plans (Free, Pro, Enterprise)
+
+### Long-Term (Production)
+
+7.**Monorepo Restructure**
+
+- [ ] Move to `apps/` + `packages/` structure
+- [ ] Setup Nx/Turborepo
+- [ ] Unified CI/CD pipeline
+
+8.**Advanced Features**
+
+- [ ] Auto-scaling for user servers
+- [ ] Backup to S3/Azure Blob
+- [ ] Plugin marketplace
+- [ ] Team/organization support
 
 ---
 
 ## 📁 New Project Structure
 
-```
+```plaintext
 mineclifford-server/
 ├── .env.example                    # ✨ Updated with Cloudflare vars
 ├── docker-compose.traefik.yml      # ✨ NEW - Production deployment
@@ -557,6 +568,7 @@ mineclifford-server/
 - ⏭️ Add advanced features (auto-scaling, backups to S3, etc.)
 
 **Estimated Progress**:
+
 - **Phase 5 (Cloud Bridge)**: 100% ✅
 - **Frontend UI**: 100% ✅
 - **Alpha Deployment**: 98% (ready for testing)

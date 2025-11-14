@@ -1,13 +1,14 @@
-# Mineclifford Web
+# Mineclifford Web Dashboard
 
-**Full-stack web dashboard for managing Minecraft servers with Docker.**
+Full-stack web dashboard for managing Minecraft servers locally and in the cloud.
 
-## ✅ All Phases Complete
+## Status
 
-- ✅ Backend API (FastAPI + SQLite)
-- ✅ Frontend UI (Vanilla JS + Tailwind)
-- ✅ Docker Setup (3 services + Nginx proxy)
-- ✅ Full Integration (Real containers + WebSocket console)
+- Backend API (FastAPI + SQLite)
+- Frontend UI (Vanilla JS + Tailwind)
+- Docker Setup (3 services + Nginx proxy)
+- Full Integration (Real containers + WebSocket console)
+- Cloud Deployment (Terraform + Ansible automation)
 
 ## Quick Start
 
@@ -23,36 +24,35 @@ docker compose -f docker-compose.web.yml up -d
 
 ### Dashboard
 
-- Create/manage Minecraft servers via web UI
-- Real-time status updates (auto-refresh every 5s)
-- Start/Stop/Restart servers
+- Server creation and management via web UI
+- Real-time status monitoring (5-second refresh)
 - Live console with WebSocket streaming
-- Backup & restore worlds
+- Cloud deployment progress tracking
 
 ### Backend
 
-- Automatic Docker container creation
-- Multiple server types: Paper, Vanilla, Spigot, Forge, Fabric
-- REST API + WebSocket console
-- SQLite database
-- Health checks
+- REST API (FastAPI) + WebSocket support
+- Docker API integration for local containers
+- Terraform/Ansible executors for cloud deployments
+- SQLite database for server state
 
-### Docker
+### Deployment Options
 
-- 3 services: backend (FastAPI), frontend (Nginx), redis (cache)
-- Nginx reverse proxy + WebSocket support
-- Auto port mapping for Minecraft servers
-- Persistent volumes for data
+- **Local**: Direct Docker container creation
+- **Cloud**: Automated AWS/Azure provisioning via Terraform + Ansible
+- Real-time progress updates via WebSocket
 
 ## Architecture
 
-```plaintext
-Nginx (port 80)
-  ├─> Frontend (static files)
+```text
+Nginx Proxy (port 80)
+  ├─> Frontend (HTML/JS/Tailwind - static files)
   └─> Backend API (FastAPI :8000)
         ├─> SQLite database
-        ├─> Docker API (creates Minecraft containers)
-        └─> Redis (future caching)
+        ├─> Docker API (local containers)
+        ├─> Terraform executor (cloud provisioning)
+        ├─> Ansible executor (cloud configuration)
+        └─> WebSocket (console + deployment progress)
 ```
 
 ## Usage
@@ -71,65 +71,80 @@ cd src/web/frontend && python3 -m http.server 3000                 # Terminal 2
 ## API Examples
 
 ```bash
-# Create server
+# Create local server
 curl -X POST http://localhost/api/servers/ \
   -H "Content-Type: application/json" \
   -d '{"name":"my-server","server_type":"paper","version":"1.20.1","provider":"local"}'
 
+# Create cloud server
+curl -X POST http://localhost/api/servers/ \
+  -H "Content-Type: application/json" \
+  -d '{"name":"aws-server","server_type":"paper","provider":"aws","orchestration":"swarm"}'
+
 # List servers
 curl http://localhost/api/servers/
 
-# Create backup
-curl -X POST http://localhost/api/servers/{id}/backup
-
-# Console WebSocket
-ws://localhost/api/console/{id}
+# WebSocket endpoints
+ws://localhost/api/console/{id}              # Live console
+ws://localhost/api/servers/deploy-cloud/{id} # Cloud deployment progress
 ```
 
-## Files
+## Directory Structure
 
-```plaintext
+```text
 src/web/
 ├── backend/
-│   ├── main.py                    # FastAPI app
-│   ├── api/                       # API routes
-│   │   ├── servers.py             # Server management + WebSocket
-│   │   └── versions.py            # Version Manager integration
-│   ├── models/server.py           # Pydantic models
+│   ├── main.py                       # FastAPI app entry point
+│   ├── api/
+│   │   ├── servers.py                # Server CRUD + WebSocket endpoints
+│   │   └── versions.py               # Version manager integration
+│   ├── models/server.py              # Pydantic models
 │   └── services/
-│       ├── docker.py              # Docker API client (httpx)
-│       └── deployment.py          # Local/cloud deployment
-├── frontend/
-│   ├── index.html                 # Dashboard
-│   └── js/                        # API client, dashboard logic, console
-└── README.md
+│       ├── docker.py                 # Docker API client
+│       ├── deployment.py             # Deployment orchestration
+│       ├── terraform_executor.py     # Terraform automation
+│       └── ansible_executor.py       # Ansible automation
+└── frontend/
+    ├── index.html                    # Dashboard UI
+    └── js/
+        ├── dashboard.js              # Main dashboard logic
+        ├── cloud-deploy.js           # Cloud deployment UI
+        └── console.js                # Live console
 
 docker/web/
-├── Dockerfile                     # Backend image
-└── nginx.conf                     # Nginx proxy config
+├── Dockerfile                        # Backend container
+├── nginx.conf                        # Local development config
+└── nginx-traefik.conf                # Production (behind Traefik)
 
-docker-compose.web.yml             # Full stack orchestration
+docker-compose.web.yml                # Local development stack
 ```
 
 ## Requirements
 
-- Docker + Docker Compose
-- Python 3.10+ (for local dev)
-- Access to `/var/run/docker.sock`
+- Docker and Docker Compose
+- Python 3.10+ (for local development)
+- Access to `/var/run/docker.sock` (for Docker API)
 
-## Dependencies
+### Additional for Cloud Deployments
 
-```plaintext
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-httpx==0.25.2
-aiosqlite==0.19.0
-pydantic==2.5.0
+- Terraform v1.0+
+- Ansible v2.9+
+- Cloud provider credentials (AWS/Azure)
+
+## Backend Dependencies
+
+```text
+fastapi==0.104.1          # Web framework
+uvicorn[standard]==0.24.0 # ASGI server
+httpx==0.25.2             # Async HTTP client
+aiosqlite==0.19.0         # Async SQLite
+pydantic==2.5.0           # Data validation
 ```
 
 ## Notes
 
-- **Docker Socket**: Backend needs `/var/run/docker.sock` access
-- **Ports**: Servers get random ports (32768+) mapped automatically
-- **Volumes**: Server data persists in Docker named volumes
-- **Provider**: Set `"provider":"local"` for Docker, `"aws"/"azure"` for future cloud support
+- Backend requires `/var/run/docker.sock` access for container management
+- Minecraft servers use auto-assigned ports (32768+)
+- Server data persists in Docker named volumes
+- Cloud deployments stream real-time progress via WebSocket
+- SQLite database stored in `data/mineclifford.db`
