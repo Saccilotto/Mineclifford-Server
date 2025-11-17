@@ -6,6 +6,8 @@ Generates Ansible-compatible variable files from Version Manager queries.
 
 import asyncio
 import argparse
+import os
+import secrets
 import sys
 import yaml
 from pathlib import Path
@@ -147,8 +149,8 @@ class AnsibleIntegration:
         vars_dict.update({
             "  ": None,
             "# Monitoring": None,
-            "rcon_password": "minecraft",
-            "grafana_password": "admin",
+            "rcon_password": os.getenv('RCON_PASSWORD', secrets.token_urlsafe(16)),
+            "grafana_password": os.getenv('GRAFANA_PASSWORD', secrets.token_urlsafe(16)),
             "timezone": "America/Sao_Paulo",
 
             "   ": None,
