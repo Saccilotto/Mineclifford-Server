@@ -406,8 +406,8 @@ minecraft_bedrock_server_name: "Mineclifford Bedrock Server"
 minecraft_bedrock_allow_cheats: false
 
 # Monitoring Configuration
-rcon_password: "minecraft"
-grafana_password: "admin"
+rcon_password: "${RCON_PASSWORD:-$(openssl rand -base64 16)}"
+grafana_password: "${GRAFANA_PASSWORD:-$(openssl rand -base64 16)}"
 timezone: "America/Sao_Paulo"
 
 # Server Names

@@ -4,6 +4,7 @@ Manages Ansible playbook execution for server configuration
 """
 import asyncio
 import os
+import secrets
 import yaml
 from pathlib import Path
 from typing import Dict, Any, Optional, AsyncIterator
@@ -70,8 +71,8 @@ class AnsibleExecutor:
             'minecraft_bedrock_allow_cheats': False,
 
             # Monitoring Configuration
-            'rcon_password': 'minecraft',  # TODO: Generate secure password
-            'grafana_password': 'admin',  # TODO: Generate secure password
+            'rcon_password': os.getenv('RCON_PASSWORD', secrets.token_urlsafe(16)),
+            'grafana_password': os.getenv('GRAFANA_PASSWORD', secrets.token_urlsafe(16)),
             'timezone': server_config.get('timezone', 'America/Sao_Paulo'),
 
             # Server Names
