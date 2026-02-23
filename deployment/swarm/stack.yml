@@ -20,17 +20,17 @@ services:
       - VIEW_DISTANCE={{ minecraft_java_view_distance | default('8') }}
       - SIMULATION_DISTANCE={{ minecraft_java_simulation_distance | default('6') }}
       - JVM_XX_OPTS=-XX:+UseG1GC -XX:G1HeapRegionSize=4M -XX:+UnlockExperimentalVMOptions -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200
-      {% if minecraft_world_import is defined %}
+{% if minecraft_world_import is defined %}
       - WORLD=/import_world/world.tar.gz
-      {% endif %}
+{% endif %}
       - TZ={{ timezone | default('America/Sao_Paulo') }}
     ports:
       - "25565:25565"
     volumes:
       - minecraft_java_data:/data
-    {% if minecraft_world_import is defined %}
+{% if minecraft_world_import is defined %}
       - {{ minecraft_world_import_dir | default('/tmp/minecraft-world-import') }}:/import_world:ro
-    {% endif %}
+{% endif %}
     deploy:
       resources:
         limits:
@@ -57,7 +57,7 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  {% if minecraft_bedrock_enabled | default(true) %}
+{% if minecraft_bedrock_enabled | default(true) %}
   # Bedrock Edition Minecraft Server
   minecraft-bedrock:
     image: itzg/minecraft-bedrock-server:{{ minecraft_bedrock_version | default('latest') }}
@@ -99,7 +99,7 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-  {% endif %}
+{% endif %}
 
   # RCON Web Admin
   rcon-web-admin:
@@ -150,11 +150,11 @@ services:
       - minecraft_network
       - traefik_network
     deploy:
-      {% if not single_node_swarm | default(false) %}
+{% if not single_node_swarm | default(false) %}
       placement:
         constraints:
           - node.role == manager
-      {% endif %}
+{% endif %}
       labels:
         com.mineclifford.service: "prometheus"
         com.mineclifford.type: "monitoring"
@@ -179,11 +179,11 @@ services:
       - minecraft_network
       - traefik_network
     deploy:
-      {% if not single_node_swarm | default(false) %}
+{% if not single_node_swarm | default(false) %}
       placement:
         constraints:
           - node.role == manager
-      {% endif %}
+{% endif %}
       labels:
         com.mineclifford.service: "grafana"
         com.mineclifford.type: "monitoring"
