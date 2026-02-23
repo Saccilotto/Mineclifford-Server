@@ -15,13 +15,13 @@ SKIP_TERRAFORM=false
 INTERACTIVE=true
 DEPLOYMENT_LOG="minecraft_ops_$(date +%Y%m%d_%H%M%S).log"
 ROLLBACK_ENABLED=true
-MINECRAFT_VERSION="latest"
+MINECRAFT_VERSION="1.21.11"
 MINECRAFT_MODE="survival"
-MINECRAFT_DIFFICULTY="hard"
+MINECRAFT_DIFFICULTY="normal"
 USE_BEDROCK=false
 NAMESPACE="mineclifford"
 KUBERNETES_PROVIDER="eks"      # eks, aks
-MEMORY="2G"
+MEMORY="3G"
 FORCE_CLEANUP=false
 SAVE_STATE=true
 STORAGE_TYPE="github"          # s3, azure, github
@@ -365,13 +365,6 @@ function run_terraform {
 function run_ansible {
     echo -e "${BLUE}Running Ansible playbooks for Minecraft...${NC}"
 
-    # In the run_ansible function
-    if [[ "$MINECRAFT_WORLD_IMPORT_READY" == "true" && -f "$MINECRAFT_WORLD_IMPORT_TAR" ]]; then
-        echo -e "${YELLOW}Adding world import to Ansible variables...${NC}"
-        echo "minecraft_world_import: \"$(realpath "$MINECRAFT_WORLD_IMPORT_TAR")\"" >> deployment/ansible/minecraft_vars.yml
-        echo "minecraft_world_import_enabled: true" >> deployment/ansible/minecraft_vars.yml
-    fi
-    
     # Verify inventory file exists
     if [[ ! -f "static_ip.ini" ]]; then
         handle_error "Inventory file static_ip.ini not found" "ansible"
@@ -387,23 +380,20 @@ function run_ansible {
 ---
 # Minecraft Configuration Variables
 minecraft_java_version: "$MINECRAFT_VERSION"
+minecraft_java_type: "VANILLA"
 minecraft_java_memory: "$MEMORY"
+minecraft_java_max_players: 15
 minecraft_java_gamemode: "$MINECRAFT_MODE"
 minecraft_java_difficulty: "$MINECRAFT_DIFFICULTY"
-minecraft_java_motd: "Mineclifford Java Server"
+minecraft_java_motd: "Mineclifford — 15 slots vanilla"
 minecraft_java_allow_nether: true
-minecraft_java_enable_command_block: true
+minecraft_java_enable_command_block: false
 minecraft_java_spawn_protection: 0
-minecraft_java_view_distance: 10
+minecraft_java_view_distance: 8
+minecraft_java_simulation_distance: 6
 
-# Bedrock Edition (if enabled)
-minecraft_bedrock_enabled: $USE_BEDROCK
-minecraft_bedrock_version: "$MINECRAFT_VERSION"
-minecraft_bedrock_memory: "1G"
-minecraft_bedrock_gamemode: "$MINECRAFT_MODE"
-minecraft_bedrock_difficulty: "$MINECRAFT_DIFFICULTY"
-minecraft_bedrock_server_name: "Mineclifford Bedrock Server"
-minecraft_bedrock_allow_cheats: false
+# Bedrock Edition — disabled (vanilla Java only)
+minecraft_bedrock_enabled: false
 
 # Monitoring Configuration
 rcon_password: "${RCON_PASSWORD:-$(openssl rand -base64 16)}"
@@ -418,10 +408,18 @@ $(for name in "${SERVER_NAMES[@]}"; do echo "  - $name"; done)
 single_node_swarm: $SINGLE_NODE_SWARM
 EOF
     
-    if [[ -n "$MINECRAFT_WORLD_IMPORT" && -f "$MINECRAFT_WORLD_IMPORT" ]]; then
+    # Append world import vars AFTER the heredoc so they are not overwritten.
+    # Uses MINECRAFT_WORLD_IMPORT_TAR (the repacked tar.gz) not the raw zip,
+    # and sets minecraft_world_import_dir explicitly so the stack.yml volume
+    # mount has a reliable value rather than falling back to a default.
+    if [[ "$MINECRAFT_WORLD_IMPORT_READY" == "true" && -f "$MINECRAFT_WORLD_IMPORT_TAR" ]]; then
         echo -e "${YELLOW}Adding world import to Ansible variables...${NC}"
-        WORLD_IMPORT_PATH=$(realpath "$MINECRAFT_WORLD_IMPORT")
-        echo "minecraft_world_import: \"$WORLD_IMPORT_PATH\"" >> deployment/ansible/minecraft_vars.yml
+        cat >> deployment/ansible/minecraft_vars.yml << EOF
+
+# World import — Aternos backup
+minecraft_world_import: "$MINECRAFT_WORLD_IMPORT_TAR"
+minecraft_world_import_dir: "/tmp/minecraft-world-import"
+EOF
     fi
 
     # Run Ansible playbook
@@ -708,15 +706,18 @@ services:
     container_name: minecraft-java
     environment:
       - EULA=TRUE
-      - TYPE=PAPER
+      - TYPE=VANILLA
       - MEMORY=$MEMORY
       - DIFFICULTY=$MINECRAFT_DIFFICULTY
       - MODE=$MINECRAFT_MODE
-      - MOTD=Mineclifford Java Server
+      - MOTD=Mineclifford — 5 slots vanilla
+      - MAX_PLAYERS=15
       - ALLOW_NETHER=true
-      - ENABLE_COMMAND_BLOCK=true
+      - ENABLE_COMMAND_BLOCK=false
       - SPAWN_PROTECTION=0
-      - VIEW_DISTANCE=10
+      - VIEW_DISTANCE=8
+      - SIMULATION_DISTANCE=6
+      - JVM_XX_OPTS=-XX:+UseG1GC -XX:G1HeapRegionSize=4M -XX:+UnlockExperimentalVMOptions -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200
       - TZ=America/Sao_Paulo
 EOF
 
@@ -724,9 +725,9 @@ EOF
     if [[ "$MINECRAFT_WORLD_IMPORT_READY" == "true" && -d "$MINECRAFT_WORLD_IMPORT_DIR" ]]; then
         echo -e "${YELLOW}Adding world import configuration...${NC}"
         
-        # Append the WORLD environment variable
+        # Append the WORLD environment variable pointing to the archive file
         cat >> docker-compose.yml << EOF
-      - WORLD=/import_world
+      - WORLD=/import_world/world.tar.gz
 EOF
     fi
 
@@ -741,7 +742,7 @@ EOF
     # Add world import volume mount if enabled
     if [[ "$MINECRAFT_WORLD_IMPORT_READY" == "true" && -d "$MINECRAFT_WORLD_IMPORT_DIR" ]]; then
         cat >> docker-compose.yml << EOF
-      - ./$MINECRAFT_WORLD_IMPORT_DIR:/import_world:ro
+      - $MINECRAFT_WORLD_IMPORT_DIR:/import_world:ro
 EOF
     fi
 
@@ -1524,9 +1525,10 @@ function deploy_infrastructure {
         # Create a tarball for remote deployment methods
         tar -czf "world_imports/import_${TIMESTAMP}.tar.gz" -C "$IMPORT_DIR" .
         
-        # Set environment variables that will be checked by deployment functions
-        export MINECRAFT_WORLD_IMPORT_DIR="$IMPORT_DIR"
-        export MINECRAFT_WORLD_IMPORT_TAR="world_imports/import_${TIMESTAMP}.tar.gz"
+        # Store as absolute paths — run_ansible() later changes into deployment/ansible/
+        # and relative paths would silently break the Ansible copy task
+        export MINECRAFT_WORLD_IMPORT_DIR="$(realpath "$IMPORT_DIR")"
+        export MINECRAFT_WORLD_IMPORT_TAR="$(realpath "world_imports/import_${TIMESTAMP}.tar.gz")"
         export MINECRAFT_WORLD_IMPORT_READY="true"
     fi
     

@@ -3,7 +3,7 @@ variable "project_name" {
 }
 
 variable "region" {
-  default = "us-east-2"
+  default = "sa-east-1"
 }
 
 variable "vpc_name" {
@@ -40,5 +40,7 @@ variable "username" {
 }
 
 variable "instance_type" {
-  default = "t2.small"  
+  # t3.medium = 2 vCPU burstable, 4 GB RAM — required for 15-player vanilla Minecraft
+  # ~$0.052/hr in sa-east-1; covered by $100 new-account credit for ~80 days
+  default = "t3.medium"
 }

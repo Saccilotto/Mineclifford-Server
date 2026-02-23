@@ -6,16 +6,22 @@ services:
     image: itzg/minecraft-server:{{ minecraft_java_version | default('latest') }}
     environment:
       - EULA=TRUE
-      - TYPE=PAPER
-      - MEMORY={{ minecraft_java_memory | default('2G') }}
+      - TYPE={{ minecraft_java_type | default('VANILLA') }}
+      - MEMORY={{ minecraft_java_memory | default('3G') }}
       - DIFFICULTY={{ minecraft_java_difficulty | default('normal') }}
       - MODE={{ minecraft_java_gamemode | default('survival') }}
-      - MOTD={{ minecraft_java_motd | default('Mineclifford Java Server') }}
+      - MOTD={{ minecraft_java_motd | default('Mineclifford — 5 slots vanilla') }}
       - OPS={{ minecraft_java_ops | default('') }}
+      - MAX_PLAYERS={{ minecraft_java_max_players | default(5) }}
       - ALLOW_NETHER={{ minecraft_java_allow_nether | default('true') }}
-      - ENABLE_COMMAND_BLOCK={{ minecraft_java_enable_command_block | default('true') }}
+      - ENABLE_COMMAND_BLOCK={{ minecraft_java_enable_command_block | default('false') }}
       - SPAWN_PROTECTION={{ minecraft_java_spawn_protection | default('0') }}
-      - VIEW_DISTANCE={{ minecraft_java_view_distance | default('10') }}
+      - VIEW_DISTANCE={{ minecraft_java_view_distance | default('8') }}
+      - SIMULATION_DISTANCE={{ minecraft_java_simulation_distance | default('6') }}
+      - JVM_XX_OPTS=-XX:+UseG1GC -XX:G1HeapRegionSize=4M -XX:+UnlockExperimentalVMOptions -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200
+      {% if minecraft_world_import is defined %}
+      - WORLD=/import_world/world.tar.gz
+      {% endif %}
       - TZ={{ timezone | default('America/Sao_Paulo') }}
     ports:
       - "25565:25565"
@@ -27,6 +33,8 @@ services:
     deploy:
       resources:
         limits:
+          memory: 3500M   # leaves ~500 MB headroom on the 4 GB t3.medium
+        reservations:
           memory: 3G
       restart_policy:
         condition: on-failure

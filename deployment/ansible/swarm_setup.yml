@@ -44,7 +44,7 @@
         - wget
         - netcat-openbsd
         - dnsutils
-        - openjdk-17-jre-headless
+        - openjdk-21-jre-headless
       state: present
       update_cache: yes
 
@@ -174,23 +174,27 @@
           state: directory
           mode: '0755'
         when: minecraft_world_import is defined
-      
-      - name: Copy world import file to server
+
+      # Aternos exports .zip; the ops script converts it to .tar.gz before passing here.
+      # The archive must contain the world/ folder at its root (standard Aternos layout).
+      - name: Copy world archive to server
         copy:
           src: "{{ minecraft_world_import }}"
           dest: /tmp/minecraft-world-import/world.tar.gz
           mode: '0644'
         when: minecraft_world_import is defined
-      
-      - name: Add world import to Docker service
-        set_fact:
-          minecraft_java_environment: "{{ minecraft_java_environment | default({}) | combine({'WORLD': '/import_world'}) }}"
+
+      # WORLD must point to the file, not the directory — itzg extracts it to /data
+      - name: Verify world archive was copied
+        stat:
+          path: /tmp/minecraft-world-import/world.tar.gz
+        register: world_archive_stat
         when: minecraft_world_import is defined
-      
-      - name: Add Docker volume bind for world import
-        set_fact:
-          minecraft_java_volumes: "{{ minecraft_java_volumes | default([]) + ['/tmp/minecraft-world-import:/import_world:ro'] }}"
-        when: minecraft_world_import is defined
+
+      - name: Fail if world archive is missing
+        fail:
+          msg: "World archive was not copied to /tmp/minecraft-world-import/world.tar.gz"
+        when: minecraft_world_import is defined and not world_archive_stat.stat.exists
 
   # Create directory for Prometheus config
   - name: Create Prometheus configuration directory
@@ -234,23 +238,16 @@
     delegate_to: "{{ manager_node }}"
     run_once: true
 
-  # Process stack.yml template with environment variables
-  - name: Process stack.yml template with environment variables
-    template:
-      src: ../swarm/stack.yml
-      dest: /home/{{ ansible_ssh_user }}/stack.yml
-    vars:
-      manager_ip: "{{ manager_ip_value }}"
-      single_node_swarm: "{{ groups['all'] | length == 1 }}"
-    delegate_to: "{{ manager_node }}"
-    run_once: true
-
   # Create traefik network if it doesn't exist
   - name: Create traefik network
     shell: docker network create --driver=overlay traefik_network || true
     delegate_to: "{{ manager_node }}"
     run_once: true
 
+  # Render stack.yml — minecraft_world_import and minecraft_world_import_dir are
+  # injected via extra_vars (-e @minecraft_vars.yml) when a world import is requested.
+  # The {% if minecraft_world_import is defined %} blocks in stack.yml activate only
+  # when those vars are present, so no hardcoded flag is needed here.
   - name: Process stack template
     template:
       src: ../swarm/stack.yml
@@ -258,8 +255,6 @@
     vars:
       manager_ip: "{{ manager_ip_value }}"
       single_node_swarm: "{{ groups['all'] | length == 1 }}"
-      # Exclude any conditional values that might break YAML
-      minecraft_world_import_enabled: false
 
   # Deploy the stack
   - name: Deploy the Minecraft stack
