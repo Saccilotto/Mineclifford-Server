@@ -1,5 +1,7 @@
 #!/bin/bash
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Colors for output
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -115,19 +117,19 @@ function handle_error {
         case "$step" in
             "terraform")
                 echo -e "${YELLOW}Rolling back infrastructure changes...${NC}"
+                local tf_rollback_dir=""
                 if [[ "$PROVIDER" == "aws" ]]; then
-                    cd terraform/aws || exit 1
+                    tf_rollback_dir="$SCRIPT_DIR/terraform/aws"
                     if [[ "$ORCHESTRATION" == "kubernetes" ]]; then
-                        cd kubernetes || exit 1
+                        tf_rollback_dir="$tf_rollback_dir/kubernetes"
                     fi
                 elif [[ "$PROVIDER" == "azure" ]]; then
-                    cd terraform/azure || exit 1
+                    tf_rollback_dir="$SCRIPT_DIR/terraform/azure"
                     if [[ "$ORCHESTRATION" == "kubernetes" ]]; then
-                        cd kubernetes || exit 1
+                        tf_rollback_dir="$tf_rollback_dir/kubernetes"
                     fi
                 fi
-                terraform destroy -auto-approve
-                cd - > /dev/null
+                (cd "$tf_rollback_dir" && terraform destroy -auto-approve)
                 ;;
             "ansible"|"swarm")
                 if [[ -f "static_ip.ini" ]]; then
