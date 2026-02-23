@@ -1,27 +1,25 @@
 ---
 # Minecraft Configuration Variables
-# Target: 15-player vanilla Java Edition on t3.medium in sa-east-1 (São Paulo)
 minecraft_java_version: "1.21.11"
 minecraft_java_type: "VANILLA"
-minecraft_java_memory: "3G"            # 3 GB heap for 15 players on 4 GB t3.medium
+minecraft_java_memory: "3G"
+minecraft_java_max_players: 15
+minecraft_java_online_mode: "FALSE"
 minecraft_java_gamemode: "survival"
 minecraft_java_difficulty: "normal"
 minecraft_java_motd: "Mineclifford — 15 slots vanilla"
 minecraft_java_allow_nether: true
-minecraft_java_enable_command_block: false  # saves RAM on vanilla
+minecraft_java_enable_command_block: false
 minecraft_java_spawn_protection: 0
-minecraft_java_max_players: 15
-minecraft_java_online_mode: "FALSE"    # allows unofficial/cracked copies to connect
 minecraft_java_view_distance: 8
 minecraft_java_simulation_distance: 6
-minecraft_java_ops: ""                 # set your IGN here, e.g. "YourUsername"
 
 # Bedrock Edition — disabled (vanilla Java only)
 minecraft_bedrock_enabled: false
 
-# Monitoring — passwords MUST be changed before deploying
-rcon_password: ""          # set a strong password
-grafana_password: ""       # set a strong password
+# Monitoring Configuration (passwords in minecraft_secrets.yml — gitignored)
+rcon_password: ""
+grafana_password: ""
 timezone: "America/Sao_Paulo"
 
 # Server Names
@@ -30,3 +28,7 @@ server_names:
 
 # Swarm Configuration
 single_node_swarm: true
+
+# World import — set in minecraft_secrets.yml with local path (gitignored)
+# minecraft_world_import: "/path/to/world_imports/backup.tar.gz"
+# minecraft_world_import_dir: "/tmp/minecraft-world-import"

@@ -81,3 +81,6 @@ ssh_keys/
 
 # Generated IP/host config (environment-specific)
 static_ip.ini
+
+# Ansible secrets (local passwords and paths — never commit)
+*_secrets.yml
