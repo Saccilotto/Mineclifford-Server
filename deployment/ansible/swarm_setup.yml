@@ -214,6 +214,14 @@
     delegate_to: "{{ manager_node }}"
     run_once: true
 
+  - name: Copy Prometheus rules directory
+    copy:
+      src: ../swarm/prometheus/rules/
+      dest: /home/{{ ansible_ssh_user }}/prometheus/rules/
+      mode: '0644'
+    delegate_to: "{{ manager_node }}"
+    run_once: true
+
   # Get manager node IP
   - name: Get manager node IP
     shell: hostname -I | awk '{print $1}'
@@ -278,16 +286,9 @@
 
   # Get final status
   - name: Show service status
-    community.docker.docker_swarm_service_info:
-    delegate_to: "{{ manager_node }}"
-    run_once: true
-    register: final_service_status
-    ignore_errors: yes
-  
-  - name: Display service status
     debug:
-      var: final_service_status.services
-    when: final_service_status is defined and final_service_status.services is defined
+      var: service_status.stdout_lines
+    when: service_status is defined
     
   # Create backup script for Minecraft worlds
   - name: Create backup script for Minecraft worlds

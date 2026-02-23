@@ -3,9 +3,10 @@ version: '3.8'
 services:
   # Java Edition Minecraft Server
   minecraft-java:
-    image: itzg/minecraft-server:{{ minecraft_java_version | default('latest') }}
+    image: itzg/minecraft-server:latest
     environment:
       - EULA=TRUE
+      - VERSION={{ minecraft_java_version | default('LATEST') }}
       - TYPE={{ minecraft_java_type | default('VANILLA') }}
       - MEMORY={{ minecraft_java_memory | default('3G') }}
       - DIFFICULTY={{ minecraft_java_difficulty | default('normal') }}
@@ -259,6 +260,8 @@ services:
     image: containrrr/watchtower:latest
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - DOCKER_API_VERSION=1.45
     command: --interval 86400 --cleanup
     deploy:
       restart_policy:
