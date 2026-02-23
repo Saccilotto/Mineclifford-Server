@@ -1,6 +1,6 @@
 ---
 # Minecraft Configuration Variables
-# Target: 5-player vanilla Java Edition on t3.micro in sa-east-1 (São Paulo)
+# Target: 15-player vanilla Java Edition on t3.medium in sa-east-1 (São Paulo)
 minecraft_java_version: "1.21.11"
 minecraft_java_type: "VANILLA"
 minecraft_java_memory: "3G"            # 3 GB heap for 15 players on 4 GB t3.medium
@@ -11,7 +11,9 @@ minecraft_java_allow_nether: true
 minecraft_java_enable_command_block: false  # saves RAM on vanilla
 minecraft_java_spawn_protection: 0
 minecraft_java_max_players: 15
-minecraft_java_view_distance: 10
+minecraft_java_online_mode: "FALSE"    # allows unofficial/cracked copies to connect
+minecraft_java_view_distance: 8
+minecraft_java_simulation_distance: 6
 minecraft_java_ops: ""                 # set your IGN here, e.g. "YourUsername"
 
 # Bedrock Edition — disabled (vanilla Java only)

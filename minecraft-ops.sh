@@ -383,6 +383,7 @@ minecraft_java_version: "$MINECRAFT_VERSION"
 minecraft_java_type: "VANILLA"
 minecraft_java_memory: "$MEMORY"
 minecraft_java_max_players: 15
+minecraft_java_online_mode: "FALSE"
 minecraft_java_gamemode: "$MINECRAFT_MODE"
 minecraft_java_difficulty: "$MINECRAFT_DIFFICULTY"
 minecraft_java_motd: "Mineclifford — 15 slots vanilla"
@@ -710,8 +711,9 @@ services:
       - MEMORY=$MEMORY
       - DIFFICULTY=$MINECRAFT_DIFFICULTY
       - MODE=$MINECRAFT_MODE
-      - MOTD=Mineclifford — 5 slots vanilla
+      - MOTD=Mineclifford — 15 slots vanilla
       - MAX_PLAYERS=15
+      - ONLINE_MODE=FALSE
       - ALLOW_NETHER=true
       - ENABLE_COMMAND_BLOCK=false
       - SPAWN_PROTECTION=0

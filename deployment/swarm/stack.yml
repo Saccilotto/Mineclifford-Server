@@ -12,7 +12,8 @@ services:
       - MODE={{ minecraft_java_gamemode | default('survival') }}
       - MOTD={{ minecraft_java_motd | default('Mineclifford — 5 slots vanilla') }}
       - OPS={{ minecraft_java_ops | default('') }}
-      - MAX_PLAYERS={{ minecraft_java_max_players | default(5) }}
+      - MAX_PLAYERS={{ minecraft_java_max_players | default(15) }}
+      - ONLINE_MODE={{ minecraft_java_online_mode | default('FALSE') }}
       - ALLOW_NETHER={{ minecraft_java_allow_nether | default('true') }}
       - ENABLE_COMMAND_BLOCK={{ minecraft_java_enable_command_block | default('false') }}
       - SPAWN_PROTECTION={{ minecraft_java_spawn_protection | default('0') }}
