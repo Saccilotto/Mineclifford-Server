@@ -7,7 +7,7 @@ module "ssh_keys" {
 # Create AWS key pairs from the module output
 resource "aws_key_pair" "generated_key" {
   for_each   = toset(var.server_names)
-  key_name   = "${each.key}-key-${formatdate("YYYYMMDDhhmmss", timestamp())}"
+  key_name   = "${var.project_name}-${each.key}-key"
   public_key = module.ssh_keys.public_keys[each.key]
 } 
 
@@ -55,7 +55,7 @@ resource "aws_instance" "instance" {
 
   # Faster and more reliable termination
   lifecycle {
-    create_before_destroy = true
+    create_before_destroy = false
   }
   
   # Ensure termination protection is off

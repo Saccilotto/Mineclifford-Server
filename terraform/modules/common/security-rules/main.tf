@@ -21,16 +21,14 @@ locals {
     ssh                = 22,
     http               = 80,
     https              = 443,
+    grafana            = 3000,
+    prometheus         = 9090,
+    rcon_web_admin     = 4326,
+    rcon_web_socket    = 4327,
     minecraft_java     = 25565,
-    minecraft_bedrock  = 19132,
-    rcon               = 25575,
-    postgres           = 5432,
-    dns_tcp            = 53,
-    mongodb            = 27017
   }
   
   common_udp_ports = {
-    dns_udp            = 53,
     minecraft_bedrock  = 19132
   }
   

@@ -15,6 +15,8 @@ services:
       - OPS={{ minecraft_java_ops | default('') }}
       - MAX_PLAYERS={{ minecraft_java_max_players | default(15) }}
       - ONLINE_MODE={{ minecraft_java_online_mode | default('FALSE') }}
+      - ENABLE_RCON=true
+      - RCON_PASSWORD={{ rcon_password | default('minecraft') }}
       - ALLOW_NETHER={{ minecraft_java_allow_nether | default('true') }}
       - ENABLE_COMMAND_BLOCK={{ minecraft_java_enable_command_block | default('false') }}
       - SPAWN_PROTECTION={{ minecraft_java_spawn_protection | default('0') }}
@@ -113,6 +115,9 @@ services:
     environment:
       - RWA_PASSWORD={{ rcon_password | default('minecraft') }}
       - RWA_ADMIN=true
+      - RWA_RCON_HOST=minecraft-java
+      - RWA_RCON_PORT=25575
+      - RWA_RCON_PASSWORD={{ rcon_password | default('minecraft') }}
     depends_on:
       - minecraft-java
     networks:
@@ -209,7 +214,6 @@ services:
       restart_policy:
         condition: on-failure
         delay: 10s
-        max_attempts: 3
       labels:
         com.mineclifford.service: "minecraft-exporter"
         com.mineclifford.type: "monitoring"

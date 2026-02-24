@@ -271,18 +271,24 @@ function save_terraform_state {
         fi
     fi
     
-    ./save-terraform-state.sh --provider "$PROVIDER" --action save --storage "$STORAGE_TYPE"
-    
-    echo -e "${GREEN}Terraform state saved successfully.${NC}"
+    if ./save-terraform-state.sh --provider "$PROVIDER" --action save --storage "$STORAGE_TYPE"; then
+        echo -e "${GREEN}Terraform state saved successfully.${NC}"
+    else
+        echo -e "${YELLOW}Could not save Terraform state to remote storage. Continuing with local state.${NC}"
+        return 1
+    fi
 }
 
 # Function to load Terraform state
 function load_terraform_state {
     echo -e "${BLUE}Loading Terraform state...${NC}"
-    
-    ./save-terraform-state.sh --provider "$PROVIDER" --action load --storage "$STORAGE_TYPE"
-    
-    echo -e "${GREEN}Terraform state loaded successfully.${NC}"
+
+    if ./save-terraform-state.sh --provider "$PROVIDER" --action load --storage "$STORAGE_TYPE"; then
+        echo -e "${GREEN}Terraform state loaded successfully.${NC}"
+    else
+        echo -e "${YELLOW}No remote Terraform state available (or failed to load). Using local state.${NC}"
+        return 1
+    fi
 }
 
 # Run Terraform with error handling
@@ -1538,7 +1544,17 @@ function deploy_infrastructure {
     
     echo -e "${GREEN}==========================================${NC}"
     
+    # Try to reuse previously saved state before planning/applying changes.
+    # This prevents duplicate infrastructure when running from another machine/workspace.
+    if [[ "$SAVE_STATE" == "true" ]]; then
+        load_terraform_state || true
+    fi
+
     run_terraform
+
+    if [[ "$SAVE_STATE" == "true" ]]; then
+        save_terraform_state || true
+    fi
 
     if [[ "$ORCHESTRATION" != "kubernetes" ]]; then
         run_ansible
