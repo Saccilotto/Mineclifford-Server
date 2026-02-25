@@ -265,7 +265,7 @@
 
   # Deploy the stack
   - name: Deploy the Minecraft stack
-    shell: docker stack deploy --with-registry-auth -c /home/{{ ansible_ssh_user }}/stack.yml Mineclifford
+    shell: docker stack deploy --with-registry-auth --prune -c /home/{{ ansible_ssh_user }}/stack.yml Mineclifford
     args:
       chdir: /home/{{ ansible_ssh_user }}
     delegate_to: "{{ manager_node }}"
