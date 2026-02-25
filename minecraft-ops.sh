@@ -691,10 +691,10 @@ function deploy_local {
     
     # Create necessary directories
     mkdir -p data/minecraft-java
-    mkdir -p data/minecraft-bedrock
-    mkdir -p data/rcon
-    mkdir -p data/prometheus
-    mkdir -p data/grafana
+    # mkdir -p data/minecraft-bedrock
+    # mkdir -p data/rcon
+    # mkdir -p data/prometheus
+    # mkdir -p data/grafana
     
     # Create a docker-compose file with our parameters
     echo -e "${YELLOW}Creating docker-compose.yml with:${NC}"
@@ -756,6 +756,13 @@ EOF
 EOF
     fi
 
+    # Add restart policy and network for minecraft-java
+    cat >> docker-compose.yml << EOF
+    restart: unless-stopped
+    networks:
+      - minecraft_network
+EOF
+
     # Add Bedrock if enabled
     if [[ "$USE_BEDROCK" == "true" ]]; then
       cat >> docker-compose.yml << EOF
@@ -782,79 +789,87 @@ EOF
 EOF
     fi
     
-    # Add RCON and monitoring
+    # Finish the compose file with just the network (non-essential services disabled)
     cat >> docker-compose.yml << EOF
-
-  # RCON Web Admin
-  rcon-web-admin:
-    image: itzg/rcon:latest
-    container_name: rcon-web-admin
-    ports:
-      - "4326:4326"
-      - "4327:4327"
-    volumes:
-      - ./data/rcon:/opt/rcon-web-admin/db
-    environment:
-      - RWA_PASSWORD=minecraft
-      - RWA_ADMIN=true
-    depends_on:
-      - minecraft-java
-    restart: unless-stopped
-    networks:
-      - minecraft_network
-      
-  # Prometheus for monitoring
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: prometheus
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./data/prometheus:/prometheus
-      - ./deployment/swarm/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-      - ./deployment/swarm/prometheus/rules:/etc/prometheus/rules
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
-      - '--web.console.templates=/usr/share/prometheus/consoles'
-    restart: unless-stopped
-    networks:
-      - minecraft_network
-      
-  # Grafana for visualization
-  grafana:
-    image: grafana/grafana:latest
-    container_name: grafana
-    ports:
-      - "3000:3000"
-    volumes:
-      - ./data/grafana:/var/lib/grafana
-      - ./deployment/swarm/grafana/dashboards:/etc/grafana/provisioning/dashboards
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_USERS_ALLOW_SIGN_UP=false
-    restart: unless-stopped
-    networks:
-      - minecraft_network
-      
-  # Minecraft exporter for Prometheus
-  minecraft-exporter:
-    image: hkubota/minecraft-exporter:latest
-    container_name: minecraft-exporter
-    ports:
-      - "9150:9150"
-    environment:
-      - MC_SERVER=minecraft-java
-      - MC_PORT=25565
-    restart: unless-stopped
-    networks:
-      - minecraft_network
 
 networks:
   minecraft_network:
     driver: bridge
 EOF
+
+    # # Add RCON and monitoring (disabled — focus resources on minecraft-java)
+    # cat >> docker-compose.yml << EOF
+    #
+    #   # RCON Web Admin
+    #   rcon-web-admin:
+    #     image: itzg/rcon:latest
+    #     container_name: rcon-web-admin
+    #     ports:
+    #       - "4326:4326"
+    #       - "4327:4327"
+    #     volumes:
+    #       - ./data/rcon:/opt/rcon-web-admin/db
+    #     environment:
+    #       - RWA_PASSWORD=minecraft
+    #       - RWA_ADMIN=true
+    #     depends_on:
+    #       - minecraft-java
+    #     restart: unless-stopped
+    #     networks:
+    #       - minecraft_network
+    #
+    #   # Prometheus for monitoring
+    #   prometheus:
+    #     image: prom/prometheus:latest
+    #     container_name: prometheus
+    #     ports:
+    #       - "9090:9090"
+    #     volumes:
+    #       - ./data/prometheus:/prometheus
+    #       - ./deployment/swarm/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    #       - ./deployment/swarm/prometheus/rules:/etc/prometheus/rules
+    #     command:
+    #       - '--config.file=/etc/prometheus/prometheus.yml'
+    #       - '--storage.tsdb.path=/prometheus'
+    #       - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+    #       - '--web.console.templates=/usr/share/prometheus/consoles'
+    #     restart: unless-stopped
+    #     networks:
+    #       - minecraft_network
+    #
+    #   # Grafana for visualization
+    #   grafana:
+    #     image: grafana/grafana:latest
+    #     container_name: grafana
+    #     ports:
+    #       - "3000:3000"
+    #     volumes:
+    #       - ./data/grafana:/var/lib/grafana
+    #       - ./deployment/swarm/grafana/dashboards:/etc/grafana/provisioning/dashboards
+    #     environment:
+    #       - GF_SECURITY_ADMIN_PASSWORD=admin
+    #       - GF_USERS_ALLOW_SIGN_UP=false
+    #     restart: unless-stopped
+    #     networks:
+    #       - minecraft_network
+    #
+    #   # Minecraft exporter for Prometheus
+    #   minecraft-exporter:
+    #     image: hkubota/minecraft-exporter:latest
+    #     container_name: minecraft-exporter
+    #     ports:
+    #       - "9150:9150"
+    #     environment:
+    #       - MC_SERVER=minecraft-java
+    #       - MC_PORT=25565
+    #     restart: unless-stopped
+    #     networks:
+    #       - minecraft_network
+    #
+    # networks:
+    #   minecraft_network:
+    #     driver: bridge
+    # EOF
     
     # Start the services
     echo -e "${YELLOW}Starting Minecraft servers...${NC}"
@@ -870,9 +885,9 @@ EOF
     if [[ "$USE_BEDROCK" == "true" ]]; then
         echo -e "${YELLOW}Access Minecraft Bedrock server at: localhost:19132${NC}"
     fi
-    echo -e "${YELLOW}Access Grafana at: http://localhost:3000 (admin/admin)${NC}"
-    echo -e "${YELLOW}Access Prometheus at: http://localhost:9090${NC}"
-    echo -e "${YELLOW}Access RCON Web Admin at: http://localhost:4326 (admin/minecraft)${NC}"
+    # echo -e "${YELLOW}Access Grafana at: http://localhost:3000 (admin/admin)${NC}"
+    # echo -e "${YELLOW}Access Prometheus at: http://localhost:9090${NC}"
+    # echo -e "${YELLOW}Access RCON Web Admin at: http://localhost:4326 (admin/minecraft)${NC}"
 }
 
 # Backup Minecraft worlds
