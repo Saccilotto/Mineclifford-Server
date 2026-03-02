@@ -19,13 +19,13 @@ variable "cluster_name" {
 variable "kubernetes_version" {
   description = "Kubernetes version to use for the EKS cluster"
   type        = string
-  default     = "1.27"
+  default     = "1.31"
 }
 
 variable "node_instance_type" {
   description = "EC2 instance type for the node groups"
   type        = string
-  default     = "t2.small"
+  default     = "t3.large"
 }
 
 variable "node_group_desired_capacity" {

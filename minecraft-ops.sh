@@ -28,6 +28,7 @@ FORCE_CLEANUP=false
 SAVE_STATE=true
 STORAGE_TYPE="github"          # s3, azure, github
 SERVER_NAMES=("instance1")     # Default server names
+SINGLE_NODE_SWARM=true         # Default to single-node swarm
 WORLD_IMPORT=""
 
 # Create log file
@@ -91,7 +92,7 @@ function show_help {
     echo -e "  --no-interactive                Run in non-interactive mode"
     echo -e "  --no-rollback                   Disable rollback on failure"
     echo -e "  --no-save-state                 Don't save Terraform state"
-    echo -e "  --storage-type <s3|azure|github> State storage type (default: s3)"
+    echo -e "  --storage-type <s3|azure|github> State storage type (default: github)"
     echo -e "  -h, --help                      Show this help message"
     echo -e "${YELLOW}Examples:${NC}"
     echo -e "  $0 deploy --provider aws --orchestration swarm"
@@ -271,7 +272,7 @@ function save_terraform_state {
         fi
     fi
     
-    if ./save-terraform-state.sh --provider "$PROVIDER" --action save --storage "$STORAGE_TYPE"; then
+    if $SCRIPT_DIR/scripts/save-terraform-state.sh --provider "$PROVIDER" --action save --storage "$STORAGE_TYPE"; then
         echo -e "${GREEN}Terraform state saved successfully.${NC}"
     else
         echo -e "${YELLOW}Could not save Terraform state to remote storage. Continuing with local state.${NC}"
@@ -283,7 +284,7 @@ function save_terraform_state {
 function load_terraform_state {
     echo -e "${BLUE}Loading Terraform state...${NC}"
 
-    if ./save-terraform-state.sh --provider "$PROVIDER" --action load --storage "$STORAGE_TYPE"; then
+    if $SCRIPT_DIR/scripts/save-terraform-state.sh --provider "$PROVIDER" --action load --storage "$STORAGE_TYPE"; then
         echo -e "${GREEN}Terraform state loaded successfully.${NC}"
     else
         echo -e "${YELLOW}No remote Terraform state available (or failed to load). Using local state.${NC}"
@@ -486,7 +487,9 @@ function import_world {
         swarm|kubernetes)
             # Create a special tarball for later use
             tar -czf "world_imports/world_import_$TIMESTAMP.tar.gz" -C "$IMPORT_DIR" .
-            export MINECRAFT_WORLD_IMPORT="world_imports/world_import_$TIMESTAMP.tar.gz"
+            export MINECRAFT_WORLD_IMPORT_TAR="$(realpath "world_imports/world_import_$TIMESTAMP.tar.gz")"
+            export MINECRAFT_WORLD_IMPORT_DIR="$(realpath "$IMPORT_DIR")"
+            export MINECRAFT_WORLD_IMPORT_READY="true"
             ;;
     esac
 
@@ -670,14 +673,6 @@ EOF
         kubectl rollout status deployment/minecraft-bedrock -n $NAMESPACE --timeout=300s || echo -e "${YELLOW}Minecraft Bedrock deployment still in progress...${NC}"
     fi
 
-    # Apply the patch for world import if needed
-    if [[ "$MINECRAFT_WORLD_IMPORT_READY" == "true" && -f "$MINECRAFT_WORLD_IMPORT_TAR" ]]; then
-        kubectl patch deployment minecraft-java -n $NAMESPACE --patch "$(cat /tmp/minecraft-java-patch.yaml)" || handle_error "Failed to patch deployment for world import" "kubernetes"
-        
-        # Delete the temporary pod once the deployment is updated
-        kubectl delete pod import-data-receiver -n $NAMESPACE
-    fi
-    
     # Get service information for connecting
     echo -e "${YELLOW}Getting service information...${NC}"
     kubectl get services -n $NAMESPACE
@@ -1496,7 +1491,7 @@ function destroy_infrastructure {
         
         # Run the verify-destruction.sh script
         echo -e "${YELLOW}Verifying destruction...${NC}"
-        ./verify-destruction.sh --provider $PROVIDER ${FORCE_CLEANUP:+--force} || handle_error "Failed to verify destruction" "destroy"
+        $SCRIPT_DIR/scripts/verify-destruction.sh --provider $PROVIDER ${FORCE_CLEANUP:+--force} || handle_error "Failed to verify destruction" "destroy"
     fi
     
     echo -e "${GREEN}Infrastructure destroyed successfully.${NC}"

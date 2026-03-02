@@ -15,7 +15,7 @@ resource "random_string" "suffix" {
 
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
-  version = "~> 3.0"
+  version = "~> 5.0"
 
   name                 = "mineclifford-vpc"
   cidr                 = "10.0.0.0/16"
@@ -44,22 +44,22 @@ module "vpc" {
 
 module "eks" {
   source          = "terraform-aws-modules/eks/aws"
-  version         = "~> 18.0"
+  version         = "~> 20.0"
   cluster_name    = local.cluster_name
-  cluster_version = "1.27"
+  cluster_version = var.kubernetes_version
   subnet_ids      = module.vpc.private_subnets
 
   vpc_id = module.vpc.vpc_id
 
   eks_managed_node_groups = {
     mineclifford = {
-      desired_size = 2
-      min_size     = 1
-      max_size     = 3
+      desired_size = var.node_group_desired_capacity
+      min_size     = var.node_group_min_size
+      max_size     = var.node_group_max_size
 
-      instance_types = ["t3.large"]
+      instance_types = [var.node_instance_type]
       capacity_type  = "ON_DEMAND"
-      disk_size      = 80
+      disk_size      = var.node_disk_size
     }
   }
 
@@ -68,28 +68,24 @@ module "eks" {
 
   node_security_group_additional_rules = {
     ingress_minecraft_java = {
-      description                   = "Minecraft Java"
-      protocol                      = "tcp"
-      from_port                     = 25565
-      to_port                       = 25565
-      type                          = "ingress"
-      cidr_blocks                   = ["0.0.0.0/0"]
+      description = "Minecraft Java"
+      protocol    = "tcp"
+      from_port   = 25565
+      to_port     = 25565
+      type        = "ingress"
+      cidr_blocks = ["0.0.0.0/0"]
     }
     ingress_minecraft_bedrock = {
-      description                   = "Minecraft Bedrock"
-      protocol                      = "udp"
-      from_port                     = 19132
-      to_port                       = 19132
-      type                          = "ingress"
-      cidr_blocks                   = ["0.0.0.0/0"]
+      description = "Minecraft Bedrock"
+      protocol    = "udp"
+      from_port   = 19132
+      to_port     = 19132
+      type        = "ingress"
+      cidr_blocks = ["0.0.0.0/0"]
     }
   }
 
-  tags = {
-    Project     = "mineclifford"
-    Environment = "production"
-    ManagedBy   = "terraform"
-  }
+  tags = var.tags
 }
 
 # Create IAM role for EBS CSI driver
@@ -107,25 +103,16 @@ module "ebs_csi_irsa_role" {
     }
   }
 
-  tags = {
-    Project     = "mineclifford"
-    Environment = "production"
-    ManagedBy   = "terraform"
-  }
+  tags = var.tags
 }
 
 # Deploy Kubernetes Add-ons: EBS CSI Driver
 resource "aws_eks_addon" "ebs_csi" {
-  cluster_name             = module.eks.cluster_id
+  cluster_name             = module.eks.cluster_name
   addon_name               = "aws-ebs-csi-driver"
-  addon_version            = "v1.16.0-eksbuild.1"
   service_account_role_arn = module.ebs_csi_irsa_role.iam_role_arn
 
-  tags = {
-    Project     = "mineclifford"
-    Environment = "production"
-    ManagedBy   = "terraform"
-  }
+  tags = var.tags
 
   depends_on = [module.eks]
 }
