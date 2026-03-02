@@ -17,9 +17,11 @@ minecraft_java_simulation_distance: 6
 # Bedrock Edition — disabled (vanilla Java only)
 minecraft_bedrock_enabled: false
 
-# Monitoring Configuration (passwords in minecraft_secrets.yml — gitignored)
-rcon_password: ""
-grafana_password: ""
+# Monitoring Configuration
+# Override these in minecraft_secrets.yml (gitignored) with secure values.
+# If left commented out, the playbook defaults will be used.
+# rcon_password: "set-in-secrets"
+# grafana_password: "set-in-secrets"
 timezone: "America/Sao_Paulo"
 
 # Server Names

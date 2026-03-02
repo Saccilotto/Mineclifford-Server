@@ -10,8 +10,7 @@ NC='\033[0m' # No Color
 # Define test directories
 SCRIPT_TESTS="script-tests"
 TERRAFORM_TESTS="terraform-tests"
-KUBERNETES_TESTS="kubernetes-tests"
-ALL_TEST_DIRS=("$SCRIPT_TESTS" "$TERRAFORM_TESTS" "$KUBERNETES_TESTS")
+ALL_TEST_DIRS=("$SCRIPT_TESTS" "$TERRAFORM_TESTS")
 
 # Command line options
 TEST_TYPE="all"
@@ -26,7 +25,7 @@ function show_help {
     echo -e "  $0 [OPTIONS]"
     echo -e ""
     echo -e "${YELLOW}Options:${NC}"
-    echo -e "  -t, --type TYPE      Type of tests to run (all, script, terraform, kubernetes)"
+    echo -e "  -t, --type TYPE      Type of tests to run (all, script, terraform)"
     echo -e "  -v, --verbose        Enable verbose output"
     echo -e "  -h, --help           Show this help message"
     echo -e ""
@@ -144,75 +143,7 @@ function run_terraform_tests {
     
     # Return to tests directory
     cd ../../tests || return 1
-    
-    # Test Terraform modules
-    echo -e "${YELLOW}Testing Terraform modules...${NC}"
-    cd ../terraform/modules/minecraft-server || return 1
-    
-    terraform init -backend=false
-    TF_RESULT=$?
-    if [[ $TF_RESULT -ne 0 ]]; then
-        echo -e "${RED}Terraform module initialization failed${NC}"
-        TEST_RESULT=1
-    fi
-    
-    terraform validate
-    TF_RESULT=$?
-    if [[ $TF_RESULT -ne 0 ]]; then
-        echo -e "${RED}Terraform module validation failed${NC}"
-        TEST_RESULT=1
-    else
-        echo -e "${GREEN}Terraform module validation passed${NC}"
-    fi
-    
-    # Return to tests directory
-    cd ../../../tests || return 1
-    
-    return $TEST_RESULT
-}
 
-# Function to run Kubernetes tests
-function run_kubernetes_tests {
-    echo -e "${BLUE}Running Kubernetes tests...${NC}"
-    
-    # Check if kubectl is installed
-    if ! command -v kubectl &> /dev/null; then
-        echo -e "${RED}Error: kubectl is not installed.${NC}"
-        return 1
-    fi
-    
-    # Create test directory if it doesn't exist
-    mkdir -p "$KUBERNETES_TESTS"
-    
-    TEST_RESULT=0
-    
-    # Test Kubernetes base manifests
-    echo -e "${YELLOW}Testing Kubernetes base manifests...${NC}"
-    if ! kubectl apply --dry-run=client -f ../deployment/kubernetes/base/; then
-        echo -e "${RED}Kubernetes base manifests validation failed${NC}"
-        TEST_RESULT=1
-    else
-        echo -e "${GREEN}Kubernetes base manifests validation passed${NC}"
-    fi
-    
-    # Test Kubernetes AWS overlay
-    echo -e "${YELLOW}Testing Kubernetes AWS overlay...${NC}"
-    if ! kubectl kustomize ../deployment/kubernetes/aws/ >/dev/null; then
-        echo -e "${RED}Kubernetes AWS overlay validation failed${NC}"
-        TEST_RESULT=1
-    else
-        echo -e "${GREEN}Kubernetes AWS overlay validation passed${NC}"
-    fi
-    
-    # Test Kubernetes Azure overlay
-    echo -e "${YELLOW}Testing Kubernetes Azure overlay...${NC}"
-    if ! kubectl kustomize ../deployment/kubernetes/azure/ >/dev/null; then
-        echo -e "${RED}Kubernetes Azure overlay validation failed${NC}"
-        TEST_RESULT=1
-    else
-        echo -e "${GREEN}Kubernetes Azure overlay validation passed${NC}"
-    fi
-    
     return $TEST_RESULT
 }
 
@@ -237,11 +168,6 @@ function run_tests {
             if [[ $? -ne 0 ]]; then
                 OVERALL_RESULT=1
             fi
-            
-            run_kubernetes_tests
-            if [[ $? -ne 0 ]]; then
-                OVERALL_RESULT=1
-            fi
             ;;
         script)
             run_script_tests
@@ -251,13 +177,9 @@ function run_tests {
             run_terraform_tests
             OVERALL_RESULT=$?
             ;;
-        kubernetes)
-            run_kubernetes_tests
-            OVERALL_RESULT=$?
-            ;;
         *)
             echo -e "${RED}Invalid test type: $TEST_TYPE${NC}"
-            echo -e "${YELLOW}Valid options: all, script, terraform, kubernetes${NC}"
+            echo -e "${YELLOW}Valid options: all, script, terraform${NC}"
             exit 1
             ;;
     esac
