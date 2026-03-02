@@ -2,7 +2,7 @@
 # Minecraft Configuration Variables
 minecraft_java_version: "1.21.11"
 minecraft_java_type: "VANILLA"
-minecraft_java_memory: "3G"
+minecraft_java_memory: "2G"
 minecraft_java_max_players: 15
 minecraft_java_online_mode: "FALSE"
 minecraft_java_gamemode: "survival"

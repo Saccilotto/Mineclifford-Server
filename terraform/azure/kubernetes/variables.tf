@@ -24,13 +24,13 @@ variable "azure_subscription_id" {
 variable "kubernetes_version" {
   description = "Kubernetes version"
   type        = string
-  default     = "1.27.3"
+  default     = "1.31"
 }
 
 variable "vm_size" {
   description = "Azure VM size"
   type        = string
-  default     = "Standard_B1s"
+  default     = "Standard_B2s"
 }
 
 variable "min_node_count" {
@@ -42,13 +42,13 @@ variable "min_node_count" {
 variable "max_node_count" {
   description = "Maximum number of nodes in the AKS cluster"
   type        = number
-  default     = 3
+  default     = 2
 }
 
 variable "os_disk_size_gb" {
   description = "Size of the OS disk in GB"
   type        = number
-  default     = 80
+  default     = 30
 }
 
 variable "tags" {

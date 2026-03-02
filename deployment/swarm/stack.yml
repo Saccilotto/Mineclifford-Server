@@ -8,7 +8,7 @@ services:
       - EULA=TRUE
       - VERSION={{ minecraft_java_version | default('LATEST') }}
       - TYPE={{ minecraft_java_type | default('VANILLA') }}
-      - MEMORY={{ minecraft_java_memory | default('3G') }}
+      - MEMORY={{ minecraft_java_memory | default('2G') }}
       - DIFFICULTY={{ minecraft_java_difficulty | default('normal') }}
       - MODE={{ minecraft_java_gamemode | default('survival') }}
       - MOTD={{ minecraft_java_motd | default('Mineclifford — 5 slots vanilla') }}
@@ -37,9 +37,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 3800M   # near-full 4 GB t3.medium — only minecraft-java runs
+          memory: 3G
         reservations:
-          memory: 3500M
+          memory: 2G
       restart_policy:
         condition: on-failure
         delay: 10s

@@ -41,6 +41,18 @@ variable "username" {
   default = "ubuntu"
 }
 
+variable "instance_type" {
+  description = "Azure VM size for standalone instances"
+  type        = string
+  default     = "Standard_B2s"
+}
+
+variable "disk_size_gb" {
+  description = "OS disk size in GB"
+  type        = number
+  default     = 30
+}
+
 variable "azure_subscription_id" {
   description = "Azure Subscription ID"
   type        = string

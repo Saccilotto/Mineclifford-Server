@@ -25,13 +25,13 @@ variable "kubernetes_version" {
 variable "node_instance_type" {
   description = "EC2 instance type for the node groups"
   type        = string
-  default     = "t3.large"
+  default     = "t3.medium"
 }
 
 variable "node_group_desired_capacity" {
   description = "Desired number of worker nodes"
   type        = number
-  default     = 2
+  default     = 1
 }
 
 variable "node_group_min_size" {
@@ -43,13 +43,13 @@ variable "node_group_min_size" {
 variable "node_group_max_size" {
   description = "Maximum number of worker nodes"
   type        = number
-  default     = 3
+  default     = 2
 }
 
 variable "node_disk_size" {
   description = "Disk size in GB for worker nodes"
   type        = number
-  default     = 80
+  default     = 30
 }
 
 variable "tags" {
