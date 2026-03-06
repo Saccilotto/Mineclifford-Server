@@ -30,6 +30,13 @@ STORAGE_TYPE="github"          # s3, azure, github
 SERVER_NAMES=("instance1")     # Default server names
 SINGLE_NODE_SWARM=true         # Default to single-node swarm
 WORLD_IMPORT=""
+PROJECT_NAME="mineclifford"
+ENVIRONMENT="production"        # production, staging, development, test
+OWNER="minecraft"
+AWS_REGION="sa-east-1"
+AZURE_LOCATION="East US 2"
+INSTANCE_TYPE=""                # auto-set per provider if empty
+DISK_SIZE_GB=30
 
 # Create log file
 touch $DEPLOYMENT_LOG
@@ -48,10 +55,6 @@ if [[ -f ".env" ]]; then
     source .env
     set +o allexport
     
-    # Export Terraform-specific variables
-    if [[ "$PROVIDER" == "azure" ]]; then
-        export TF_VAR_azure_subscription_id="$AZURE_SUBSCRIPTION_ID"
-    fi
 else
     echo -e "${YELLOW}No .env file found. Using default values.${NC}"
 fi
@@ -93,6 +96,12 @@ function show_help {
     echo -e "  --no-rollback                   Disable rollback on failure"
     echo -e "  --no-save-state                 Don't save Terraform state"
     echo -e "  --storage-type <s3|azure|github> State storage type (default: github)"
+    echo -e "  --project-name NAME             Project name for resource naming/tagging (default: mineclifford)"
+    echo -e "  --environment ENV               Environment tag: production|staging|development|test (default: production)"
+    echo -e "  --owner OWNER                   Owner tag for resources (default: minecraft)"
+    echo -e "  --region REGION                 Cloud region (provider-aware, default: sa-east-1 / East US 2)"
+    echo -e "  --instance-type TYPE            VM/instance type (provider-aware)"
+    echo -e "  --disk-size GB                  Disk size in GB (default: 30)"
     echo -e "  -h, --help                      Show this help message"
     echo -e "${YELLOW}Examples:${NC}"
     echo -e "  $0 deploy --provider aws --orchestration swarm"
@@ -235,6 +244,14 @@ function validate_environment {
         fi
     fi
 
+    if [[ -z "$PROJECT_NAME" ]]; then
+        handle_error "Project name cannot be empty" "pre-operation"
+    fi
+
+    if [[ ! "$ENVIRONMENT" =~ ^(production|staging|development|test)$ ]]; then
+        handle_error "Invalid environment. Must be one of: production, staging, development, test" "pre-operation"
+    fi
+
     if [[ ! "$PROVIDER" =~ ^(aws|azure)$ ]]; then
         handle_error "Invalid provider. Must be 'aws' or 'azure'" "pre-operation"
     fi
@@ -292,6 +309,61 @@ function load_terraform_state {
     fi
 }
 
+# Export Terraform variables from script settings
+function export_terraform_vars {
+    echo -e "${YELLOW}Exporting Terraform variables...${NC}"
+
+    # Resolve instance type defaults per provider
+    local resolved_instance_type="$INSTANCE_TYPE"
+    if [[ -z "$resolved_instance_type" ]]; then
+        if [[ "$PROVIDER" == "aws" ]]; then
+            resolved_instance_type="t3.medium"
+        elif [[ "$PROVIDER" == "azure" ]]; then
+            resolved_instance_type="Standard_B2s"
+        fi
+    fi
+
+    # Universal variables
+    export TF_VAR_server_names="$(printf '["%s"]' "$(IFS='","'; echo "${SERVER_NAMES[*]}")")"
+
+    # Provider-specific variables
+    if [[ "$PROVIDER" == "aws" ]]; then
+        export TF_VAR_project_name="$PROJECT_NAME"
+        export TF_VAR_region="$AWS_REGION"
+        export TF_VAR_vpc_name="${PROJECT_NAME}-vpc"
+        export TF_VAR_subnet_name="${PROJECT_NAME}-subnet"
+        export TF_VAR_instance_type="$resolved_instance_type"
+
+        if [[ "$ORCHESTRATION" == "kubernetes" ]]; then
+            export TF_VAR_cluster_name="${PROJECT_NAME}-eks"
+            export TF_VAR_node_instance_type="$resolved_instance_type"
+            export TF_VAR_node_disk_size="$DISK_SIZE_GB"
+            export TF_VAR_tags="{\"Project\":\"${PROJECT_NAME}\",\"Environment\":\"${ENVIRONMENT}\",\"ManagedBy\":\"terraform\",\"Owner\":\"${OWNER}\"}"
+        else
+            export TF_VAR_environment="$ENVIRONMENT"
+            export TF_VAR_owner="$OWNER"
+            export TF_VAR_disk_size_gb="$DISK_SIZE_GB"
+        fi
+    elif [[ "$PROVIDER" == "azure" ]]; then
+        export TF_VAR_resource_group_name="$PROJECT_NAME"
+        export TF_VAR_location="$AZURE_LOCATION"
+        export TF_VAR_vnet_name="${PROJECT_NAME}-vnet"
+        export TF_VAR_instance_type="$resolved_instance_type"
+        export TF_VAR_azure_subscription_id="${AZURE_SUBSCRIPTION_ID:-}"
+
+        if [[ "$ORCHESTRATION" == "kubernetes" ]]; then
+            export TF_VAR_prefix="$PROJECT_NAME"
+            export TF_VAR_vm_size="$resolved_instance_type"
+            export TF_VAR_os_disk_size_gb="$DISK_SIZE_GB"
+            export TF_VAR_tags="{\"Project\":\"${PROJECT_NAME}\",\"Environment\":\"${ENVIRONMENT}\",\"ManagedBy\":\"terraform\",\"Owner\":\"${OWNER}\"}"
+        else
+            export TF_VAR_environment="$ENVIRONMENT"
+            export TF_VAR_owner="$OWNER"
+            export TF_VAR_disk_size_gb="$DISK_SIZE_GB"
+        fi
+    fi
+}
+
 # Run Terraform with error handling
 function run_terraform {
     if [[ "$SKIP_TERRAFORM" == "true" ]]; then
@@ -299,7 +371,7 @@ function run_terraform {
         return
     fi
 
-    SERVER_NAMES_JSON=$(printf '"%s",' "${SERVER_NAMES[@]}" | sed 's/,$//')
+    export_terraform_vars
 
     echo -e "${BLUE}Running Terraform for $PROVIDER...${NC}"
     
@@ -328,7 +400,7 @@ function run_terraform {
     terraform init || handle_error "Terraform initialization failed" "terraform"
     
     echo -e "${YELLOW}Planning Terraform changes...${NC}"
-    terraform plan -var="server_names=[${SERVER_NAMES_JSON}]" -out=tf.plan || handle_error "Terraform plan failed" "terraform"
+    terraform plan -out=tf.plan || handle_error "Terraform plan failed" "terraform"
     
     echo -e "${YELLOW}Applying Terraform changes...${NC}"
     terraform apply tf.plan || handle_error "Terraform apply failed" "terraform"
@@ -1653,6 +1725,31 @@ while [[ $# -gt 0 ]]; do
             ;;
         --storage-type)
             STORAGE_TYPE="$2"
+            shift 2
+            ;;
+        --project-name)
+            PROJECT_NAME="$2"
+            shift 2
+            ;;
+        --environment)
+            ENVIRONMENT="$2"
+            shift 2
+            ;;
+        --owner)
+            OWNER="$2"
+            shift 2
+            ;;
+        --region)
+            AWS_REGION="$2"
+            AZURE_LOCATION="$2"
+            shift 2
+            ;;
+        --instance-type)
+            INSTANCE_TYPE="$2"
+            shift 2
+            ;;
+        --disk-size)
+            DISK_SIZE_GB="$2"
             shift 2
             ;;
         -h|--help)

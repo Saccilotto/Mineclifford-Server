@@ -4,6 +4,12 @@ variable "region" {
   default     = "us-east-2"
 }
 
+variable "project_name" {
+  description = "Project name used for naming resources"
+  type        = string
+  default     = "mineclifford"
+}
+
 variable "server_names" {
   description = "List of server instance names to create"
   type        = list(string)

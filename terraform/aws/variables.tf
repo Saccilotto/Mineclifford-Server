@@ -44,3 +44,21 @@ variable "instance_type" {
   # ~$0.052/hr in sa-east-1; covered by $100 new-account credit for ~80 days
   default = "t3.medium"
 }
+
+variable "environment" {
+  description = "Deployment environment (production, staging, development, test)"
+  type        = string
+  default     = "production"
+}
+
+variable "owner" {
+  description = "Owner tag for resources"
+  type        = string
+  default     = "minecraft"
+}
+
+variable "disk_size_gb" {
+  description = "Root volume size in GB"
+  type        = number
+  default     = 30
+}

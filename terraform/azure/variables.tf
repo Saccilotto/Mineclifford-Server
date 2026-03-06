@@ -53,6 +53,18 @@ variable "disk_size_gb" {
   default     = 30
 }
 
+variable "environment" {
+  description = "Deployment environment (production, staging, development, test)"
+  type        = string
+  default     = "production"
+}
+
+variable "owner" {
+  description = "Owner tag for resources"
+  type        = string
+  default     = "minecraft"
+}
+
 variable "azure_subscription_id" {
   description = "Azure Subscription ID"
   type        = string

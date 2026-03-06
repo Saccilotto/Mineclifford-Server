@@ -5,7 +5,7 @@ provider "aws" {
 data "aws_availability_zones" "available" {}
 
 locals {
-  cluster_name = "mineclifford-eks-${random_string.suffix.result}"
+  cluster_name = "${var.project_name}-eks-${random_string.suffix.result}"
 }
 
 resource "random_string" "suffix" {
@@ -17,7 +17,7 @@ module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "~> 5.0"
 
-  name                 = "mineclifford-vpc"
+  name                 = "${var.project_name}-vpc"
   cidr                 = "10.0.0.0/16"
   azs                  = data.aws_availability_zones.available.names
   private_subnets      = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
@@ -26,10 +26,9 @@ module "vpc" {
   single_nat_gateway   = true
   enable_dns_hostnames = true
 
-  tags = {
+  tags = merge(var.tags, {
     "kubernetes.io/cluster/${local.cluster_name}" = "shared"
-    "Project"                                      = "mineclifford"
-  }
+  })
 
   public_subnet_tags = {
     "kubernetes.io/cluster/${local.cluster_name}" = "shared"
@@ -52,7 +51,7 @@ module "eks" {
   vpc_id = module.vpc.vpc_id
 
   eks_managed_node_groups = {
-    mineclifford = {
+    (var.project_name) = {
       desired_size = var.node_group_desired_capacity
       min_size     = var.node_group_min_size
       max_size     = var.node_group_max_size
