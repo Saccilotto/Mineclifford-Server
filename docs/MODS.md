@@ -50,10 +50,10 @@ No manual jar downloads, no volume-mounting mod files — just declare what you 
 - **Forge path**: No external dependencies (Flywheel is bundled since 0.5.1)
 - **Recommended**: A recipe viewer mod (`jei`, `rei`, or `emi`) for browsing Create recipes in-game
 
-### Deploy Create (Fabric) — Local
+### Deploy Create (Fabric) — Local Compose
 
 ```bash
-./minecraft-ops.sh deploy --orchestration local \
+./minecraft-ops.sh deploy --orchestration compose --skip-terraform \
   --server-type FABRIC \
   --mods "create-fabric,fabric-api" \
   --minecraft-version 1.20.1
@@ -82,7 +82,7 @@ No manual jar downloads, no volume-mounting mod files — just declare what you 
 ### Deploy Create with Recipe Viewer
 
 ```bash
-./minecraft-ops.sh deploy --orchestration local \
+./minecraft-ops.sh deploy --orchestration compose --skip-terraform \
   --server-type FABRIC \
   --mods "create-fabric,fabric-api,roughly-enough-items" \
   --minecraft-version 1.20.1
@@ -95,7 +95,7 @@ No manual jar downloads, no volume-mounting mod files — just declare what you 
 Comma-separate Modrinth project slugs:
 
 ```bash
-./minecraft-ops.sh deploy --orchestration local \
+./minecraft-ops.sh deploy --orchestration compose --skip-terraform \
   --server-type FABRIC \
   --mods "create-fabric,fabric-api,sodium,lithium,iris" \
   --minecraft-version 1.20.1
@@ -104,7 +104,7 @@ Comma-separate Modrinth project slugs:
 ### Pin Loader Version
 
 ```bash
-./minecraft-ops.sh deploy --orchestration local \
+./minecraft-ops.sh deploy --orchestration compose --skip-terraform \
   --server-type FABRIC \
   --mods "create-fabric,fabric-api" \
   --minecraft-version 1.20.1 \
@@ -114,7 +114,7 @@ Comma-separate Modrinth project slugs:
 ### Forge Server
 
 ```bash
-./minecraft-ops.sh deploy --orchestration local \
+./minecraft-ops.sh deploy --orchestration compose --skip-terraform \
   --server-type FORGE \
   --mods "create,jei" \
   --minecraft-version 1.20.1
@@ -123,7 +123,7 @@ Comma-separate Modrinth project slugs:
 ### NeoForge Server
 
 ```bash
-./minecraft-ops.sh deploy --orchestration local \
+./minecraft-ops.sh deploy --orchestration compose --skip-terraform \
   --server-type NEOFORGE \
   --mods "create" \
   --minecraft-version 1.20.1

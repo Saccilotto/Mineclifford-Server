@@ -139,11 +139,14 @@ Use the web interface to:
 ### Option 2: CLI Operations
 
 ```bash
-# Deploy locally for testing
-./minecraft-ops.sh deploy --orchestration local
+# Deploy locally for testing (compose mode)
+./minecraft-ops.sh deploy --orchestration compose --skip-terraform
 
 # Deploy to AWS with Docker Swarm
 ./minecraft-ops.sh deploy --provider aws --orchestration swarm
+
+# Deploy to AWS with Docker Compose on VM(s)
+./minecraft-ops.sh deploy --provider aws --orchestration compose
 
 # Deploy to Azure with Kubernetes
 ./minecraft-ops.sh deploy --provider azure --orchestration kubernetes

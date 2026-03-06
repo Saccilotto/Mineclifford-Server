@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mineclifford-updater
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: mineclifford-updater
+rules:
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  verbs: ["get", "list", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: mineclifford-updater
+subjects:
+- kind: ServiceAccount
+  name: mineclifford-updater
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: mineclifford-updater
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mineclifford-auto-updater
+spec:
+  schedule: "0 4 * * *"
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: mineclifford-updater
+          restartPolicy: OnFailure
+          containers:
+          - name: updater
+            image: bitnami/kubectl:latest
+            imagePullPolicy: Always
+            command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              kubectl rollout restart deployment/minecraft-java
+              kubectl rollout restart deployment/rcon-web-admin
+              kubectl get deployment/minecraft-bedrock >/dev/null 2>&1 && kubectl rollout restart deployment/minecraft-bedrock || true

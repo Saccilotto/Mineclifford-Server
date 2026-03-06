@@ -13,7 +13,7 @@ NC='\033[0m' # No Color
 # Default values
 ACTION="deploy"                # deploy, destroy, status
 PROVIDER="aws"                 # aws, azure
-ORCHESTRATION="swarm"          # swarm, kubernetes, local
+ORCHESTRATION="swarm"          # swarm, kubernetes, compose (local is alias)
 SKIP_TERRAFORM=false
 INTERACTIVE=true
 DEPLOYMENT_LOG="minecraft_ops_$(date +%Y%m%d_%H%M%S).log"
@@ -45,6 +45,19 @@ SERVER_TYPE="VANILLA"             # VANILLA, FORGE, FABRIC, NEOFORGE, PAPER
 MODRINTH_PROJECTS=""              # Comma-separated Modrinth project slugs (e.g. "create-fabric,fabric-api")
 MODRINTH_DOWNLOAD_DEPS="required" # none, required, optional
 MOD_LOADER_VERSION=""             # Specific loader version (empty = latest)
+
+# Shared gameplay/runtime defaults (used across compose, swarm, and kubernetes)
+MINECRAFT_MAX_PLAYERS=15
+MINECRAFT_ONLINE_MODE="FALSE"
+MINECRAFT_ALLOW_NETHER=true
+MINECRAFT_ENABLE_COMMAND_BLOCK=false
+MINECRAFT_SPAWN_PROTECTION=0
+MINECRAFT_VIEW_DISTANCE=8
+MINECRAFT_SIMULATION_DISTANCE=6
+TIMEZONE="America/Sao_Paulo"
+MINECRAFT_JAVA_MOTD=""
+MINECRAFT_BEDROCK_SERVER_NAME=""
+MINECRAFT_BEDROCK_LEVEL_NAME=""
 
 # Create log file
 touch $DEPLOYMENT_LOG
@@ -86,7 +99,7 @@ function show_help {
     echo -e "  restore                         Restore Minecraft worlds from backup"
     echo -e "${YELLOW}Options:${NC}"
     echo -e "  -p, --provider <aws|azure>      Specify the cloud provider (default: aws)"
-    echo -e "  -o, --orchestration <swarm|kubernetes|local>"
+    echo -e "  -o, --orchestration <swarm|kubernetes|compose|local>"
     echo -e "                                  Orchestration method (default: swarm)"
     echo -e "  -s, --skip-terraform            Skip Terraform provisioning"
     echo -e "  -v, --minecraft-version VERSION Specify Minecraft version (default: latest)"
@@ -123,13 +136,20 @@ function show_help {
     echo -e "  $0 deploy --provider aws --orchestration swarm"
     echo -e "  $0 deploy --provider azure --orchestration kubernetes --k8s aks"
     echo -e "  $0 destroy --provider aws --orchestration swarm --force"
+    echo -e "  $0 deploy --orchestration compose --skip-terraform"
     echo -e "  $0 deploy --orchestration local --minecraft-version 1.19"
     echo -e "  $0 backup --provider aws --orchestration swarm"
     echo -e ""
     echo -e "${YELLOW}Mod Examples:${NC}"
-    echo -e "  $0 deploy --orchestration local --server-type FABRIC --mods 'create-fabric,fabric-api' --minecraft-version 1.20.1"
+    echo -e "  $0 deploy --orchestration compose --skip-terraform --server-type FABRIC --mods 'create-fabric,fabric-api' --minecraft-version 1.20.1"
     echo -e "  $0 deploy --provider aws --orchestration swarm --server-type FORGE --mods 'create' --minecraft-version 1.20.1"
     exit 0
+}
+
+function initialize_runtime_config {
+    MINECRAFT_JAVA_MOTD="${PROJECT_NAME} Java Server"
+    MINECRAFT_BEDROCK_SERVER_NAME="${PROJECT_NAME} Bedrock Server"
+    MINECRAFT_BEDROCK_LEVEL_NAME="$PROJECT_NAME"
 }
 
 # Function for error handling
@@ -178,7 +198,7 @@ function handle_error {
                     kubectl delete namespace $NAMESPACE || true
                 fi
                 ;;
-            "local")
+            "compose")
                 echo -e "${YELLOW}Stopping and removing local Docker containers...${NC}"
                 docker compose down -v || true
                 ;;
@@ -193,13 +213,15 @@ function handle_error {
 function validate_environment {
     echo -e "${BLUE}Validating environment...${NC}"
     
-    # Check required tools for all operations
-    for cmd in terraform jq; do
-        if ! command -v $cmd &> /dev/null; then
-            echo -e "${RED}Error: Required tool '$cmd' is not installed.${NC}"
-            handle_error "Missing required tool: $cmd" "pre-operation"
-        fi
-    done
+    # Check required tools for all operations except fully local compose mode
+    if [[ ! ( "$ORCHESTRATION" == "compose" && "$SKIP_TERRAFORM" == "true" ) ]]; then
+        for cmd in terraform jq; do
+            if ! command -v $cmd &> /dev/null; then
+                echo -e "${RED}Error: Required tool '$cmd' is not installed.${NC}"
+                handle_error "Missing required tool: $cmd" "pre-operation"
+            fi
+        done
+    fi
     
     # Check orchestration-specific tools
     if [[ "$ORCHESTRATION" == "swarm" ]]; then
@@ -212,19 +234,29 @@ function validate_environment {
             echo -e "${RED}Error: Required tool 'kubectl' is not installed.${NC}"
             handle_error "Missing required tool: kubectl" "pre-operation"
         fi
-    elif [[ "$ORCHESTRATION" == "local" ]]; then
-        if ! command -v docker &> /dev/null; then
-            echo -e "${RED}Error: Required tool 'docker' is not installed.${NC}"
-            handle_error "Missing required tool: docker" "pre-operation"
-        fi
-        if ! docker compose version &> /dev/null; then
-            echo -e "${RED}Error: Required tool 'docker compose' (Docker Compose V2 plugin) is not installed.${NC}"
-            handle_error "Missing required tool: docker compose" "pre-operation"
+    elif [[ "$ORCHESTRATION" == "compose" ]]; then
+        if [[ "$SKIP_TERRAFORM" == "true" ]]; then
+            if ! command -v docker &> /dev/null; then
+                echo -e "${RED}Error: Required tool 'docker' is not installed.${NC}"
+                handle_error "Missing required tool: docker" "pre-operation"
+            fi
+            if ! docker compose version &> /dev/null; then
+                echo -e "${RED}Error: Required tool 'docker compose' (Docker Compose V2 plugin) is not installed.${NC}"
+                handle_error "Missing required tool: docker compose" "pre-operation"
+            fi
+        else
+            if ! command -v ansible-playbook &> /dev/null; then
+                echo -e "${RED}Error: Required tool 'ansible-playbook' is not installed.${NC}"
+                handle_error "Missing required tool: ansible-playbook" "pre-operation"
+            fi
         fi
     fi
     
+    # For compose + --skip-terraform, run purely local and skip cloud credential checks.
+    if [[ "$ORCHESTRATION" == "compose" && "$SKIP_TERRAFORM" == "true" ]]; then
+        echo -e "${YELLOW}Compose local mode detected (no Terraform). Skipping cloud credential checks.${NC}"
     # Check provider-specific tools
-    if [[ "$PROVIDER" == "aws" ]]; then
+    elif [[ "$PROVIDER" == "aws" ]]; then
         if ! command -v aws &> /dev/null; then
             echo -e "${RED}Error: AWS CLI is not installed.${NC}"
             handle_error "Missing required tool: aws" "pre-operation"
@@ -276,8 +308,8 @@ function validate_environment {
         handle_error "Invalid provider. Must be 'aws' or 'azure'" "pre-operation"
     fi
 
-    if [[ ! "$ORCHESTRATION" =~ ^(swarm|kubernetes|local)$ ]]; then
-        handle_error "Invalid orchestration. Must be 'swarm', 'kubernetes', or 'local'" "pre-operation"
+    if [[ ! "$ORCHESTRATION" =~ ^(swarm|kubernetes|compose)$ ]]; then
+        handle_error "Invalid orchestration. Must be 'swarm', 'kubernetes', or 'compose' (or alias 'local')" "pre-operation"
     fi
 
     if [[ "$ORCHESTRATION" == "kubernetes" && ! "$KUBERNETES_PROVIDER" =~ ^(eks|aks)$ ]]; then
@@ -309,7 +341,7 @@ function save_terraform_state {
         fi
     fi
     
-    if $SCRIPT_DIR/scripts/save-terraform-state.sh --provider "$PROVIDER" --action save --storage "$STORAGE_TYPE"; then
+    if $SCRIPT_DIR/scripts/save-terraform-state.sh --provider "$PROVIDER" --action save --orchestration "$ORCHESTRATION" --storage "$STORAGE_TYPE"; then
         echo -e "${GREEN}Terraform state saved successfully.${NC}"
     else
         echo -e "${YELLOW}Could not save Terraform state to remote storage. Continuing with local state.${NC}"
@@ -321,7 +353,7 @@ function save_terraform_state {
 function load_terraform_state {
     echo -e "${BLUE}Loading Terraform state...${NC}"
 
-    if $SCRIPT_DIR/scripts/save-terraform-state.sh --provider "$PROVIDER" --action load --storage "$STORAGE_TYPE"; then
+    if $SCRIPT_DIR/scripts/save-terraform-state.sh --provider "$PROVIDER" --action load --orchestration "$ORCHESTRATION" --storage "$STORAGE_TYPE"; then
         echo -e "${GREEN}Terraform state loaded successfully.${NC}"
     else
         echo -e "${YELLOW}No remote Terraform state available (or failed to load). Using local state.${NC}"
@@ -367,7 +399,7 @@ function export_terraform_vars {
             export TF_VAR_cluster_name="${PROJECT_NAME}-eks"
             export TF_VAR_node_instance_type="$resolved_instance_type"
             export TF_VAR_node_disk_size="$DISK_SIZE_GB"
-            export TF_VAR_tags="{\"Project\":\"${PROJECT_NAME}\",\"Environment\":\"${ENVIRONMENT}\",\"ManagedBy\":\"terraform\",\"Owner\":\"${OWNER}\"}"
+            export TF_VAR_tags="{\"Project\":\"${PROJECT_NAME}\",\"Environment\":\"${ENVIRONMENT}\",\"ManagedBy\":\"terraform\",\"Owner\":\"${OWNER}\",\"Orchestration\":\"${ORCHESTRATION}\",\"ServerType\":\"${SERVER_TYPE}\"}"
         else
             export TF_VAR_environment="$ENVIRONMENT"
             export TF_VAR_owner="$OWNER"
@@ -384,7 +416,7 @@ function export_terraform_vars {
             export TF_VAR_prefix="$PROJECT_NAME"
             export TF_VAR_vm_size="$resolved_instance_type"
             export TF_VAR_os_disk_size_gb="$DISK_SIZE_GB"
-            export TF_VAR_tags="{\"Project\":\"${PROJECT_NAME}\",\"Environment\":\"${ENVIRONMENT}\",\"ManagedBy\":\"terraform\",\"Owner\":\"${OWNER}\"}"
+            export TF_VAR_tags="{\"Project\":\"${PROJECT_NAME}\",\"Environment\":\"${ENVIRONMENT}\",\"ManagedBy\":\"terraform\",\"Owner\":\"${OWNER}\",\"Orchestration\":\"${ORCHESTRATION}\",\"ServerType\":\"${SERVER_TYPE}\"}"
         else
             export TF_VAR_environment="$ENVIRONMENT"
             export TF_VAR_owner="$OWNER"
@@ -512,21 +544,23 @@ function run_ansible {
 minecraft_java_version: "$MINECRAFT_VERSION"
 minecraft_java_type: "$SERVER_TYPE"
 minecraft_java_memory: "$MEMORY"
-minecraft_java_max_players: 15
-minecraft_java_online_mode: "FALSE"
+minecraft_java_max_players: $MINECRAFT_MAX_PLAYERS
+minecraft_java_online_mode: "$MINECRAFT_ONLINE_MODE"
 minecraft_java_gamemode: "$MINECRAFT_MODE"
 minecraft_java_difficulty: "$MINECRAFT_DIFFICULTY"
-minecraft_java_motd: "Mineclifford — 15 slots vanilla"
-minecraft_java_allow_nether: true
-minecraft_java_enable_command_block: false
-minecraft_java_spawn_protection: 0
-minecraft_java_view_distance: 8
-minecraft_java_simulation_distance: 6
+minecraft_java_motd: "$MINECRAFT_JAVA_MOTD"
+minecraft_java_allow_nether: $MINECRAFT_ALLOW_NETHER
+minecraft_java_enable_command_block: $MINECRAFT_ENABLE_COMMAND_BLOCK
+minecraft_java_spawn_protection: $MINECRAFT_SPAWN_PROTECTION
+minecraft_java_view_distance: $MINECRAFT_VIEW_DISTANCE
+minecraft_java_simulation_distance: $MINECRAFT_SIMULATION_DISTANCE
 
 # Bedrock Edition
 minecraft_bedrock_enabled: $USE_BEDROCK
 minecraft_bedrock_gamemode: "$MINECRAFT_MODE"
 minecraft_bedrock_difficulty: "$MINECRAFT_DIFFICULTY"
+minecraft_bedrock_server_name: "$MINECRAFT_BEDROCK_SERVER_NAME"
+minecraft_bedrock_level_name: "$MINECRAFT_BEDROCK_LEVEL_NAME"
 
 # Mod Support
 minecraft_modrinth_projects: "$MODRINTH_PROJECTS"
@@ -536,7 +570,7 @@ minecraft_mod_loader_version: "$MOD_LOADER_VERSION"
 # Monitoring Configuration
 rcon_password: "$RCON_PASSWORD"
 grafana_password: "$GRAFANA_PASSWORD"
-timezone: "America/Sao_Paulo"
+timezone: "$TIMEZONE"
 
 # Server Names
 server_names:
@@ -544,6 +578,10 @@ $(for name in "${SERVER_NAMES[@]}"; do echo "  - $name"; done)
 
 # Swarm Configuration
 single_node_swarm: $SINGLE_NODE_SWARM
+
+# Docker orchestration mode
+orchestration_mode: "$ORCHESTRATION"
+compose_file_source: "$SCRIPT_DIR/docker-compose.generated.yml"
 EOF
     
     # Append world import vars AFTER the heredoc so they are not overwritten.
@@ -570,7 +608,7 @@ EOF
     
     # Run main playbook
     echo -e "${YELLOW}Running Minecraft setup playbook...${NC}"
-    if [[ "$ORCHESTRATION" == "swarm" ]]; then
+    if [[ "$ORCHESTRATION" == "swarm" || "$ORCHESTRATION" == "compose" ]]; then
         ansible-playbook -i ../../static_ip.ini swarm_setup.yml -e "@minecraft_vars.yml" ${ANSIBLE_EXTRA_VARS:+-e "$ANSIBLE_EXTRA_VARS"} || handle_error "Ansible playbook execution failed" "ansible"
     fi
 
@@ -583,7 +621,11 @@ EOF
     MANAGER_IP=$(grep -A1 '\[instance1\]' static_ip.ini | tail -n1 | awk '{print $1}')
     if [[ -n "$MANAGER_IP" ]]; then
         echo -e "${YELLOW}Checking services on manager node $MANAGER_IP...${NC}"
-        ssh $SSH_OPTS -i ssh_keys/instance1.pem ubuntu@$MANAGER_IP "docker service ls" || echo -e "${YELLOW}Unable to check services, may still be initializing...${NC}"
+        if [[ "$ORCHESTRATION" == "compose" ]]; then
+            ssh $SSH_OPTS -i ssh_keys/instance1.pem ubuntu@$MANAGER_IP "docker compose -f /home/ubuntu/mineclifford-compose/docker-compose.yml ps" || echo -e "${YELLOW}Unable to check services, may still be initializing...${NC}"
+        else
+            ssh $SSH_OPTS -i ssh_keys/instance1.pem ubuntu@$MANAGER_IP "docker service ls" || echo -e "${YELLOW}Unable to check services, may still be initializing...${NC}"
+        fi
     fi
     
     echo -e "${GREEN}Ansible deployment completed successfully.${NC}"
@@ -606,7 +648,7 @@ function import_world {
     
     # Based on orchestration type, copy the world
     case "$ORCHESTRATION" in
-        local)
+        compose)
             # Set up for local import during docker compose
             export MINECRAFT_WORLD_DIR="$IMPORT_DIR"
             ;;
@@ -787,16 +829,17 @@ EOF
         --from-literal=MEMORY="$MEMORY" \
         --from-literal=DIFFICULTY="$MINECRAFT_DIFFICULTY" \
         --from-literal=MODE="$MINECRAFT_MODE" \
-        --from-literal=MOTD="${PROJECT_NAME} Java Server" \
-        --from-literal=MAX_PLAYERS=15 \
-        --from-literal=ONLINE_MODE=FALSE \
+        --from-literal=MOTD="$MINECRAFT_JAVA_MOTD" \
+        --from-literal=MAX_PLAYERS=$MINECRAFT_MAX_PLAYERS \
+        --from-literal=ONLINE_MODE=$MINECRAFT_ONLINE_MODE \
         --from-literal=ENABLE_RCON=true \
         --from-literal=RCON_PASSWORD="${RCON_PASSWORD:-minecraft}" \
-        --from-literal=ALLOW_NETHER=true \
-        --from-literal=ENABLE_COMMAND_BLOCK=false \
-        --from-literal=SPAWN_PROTECTION=0 \
-        --from-literal=VIEW_DISTANCE=8 \
-        --from-literal=TZ=America/Sao_Paulo \
+        --from-literal=ALLOW_NETHER=$MINECRAFT_ALLOW_NETHER \
+        --from-literal=ENABLE_COMMAND_BLOCK=$MINECRAFT_ENABLE_COMMAND_BLOCK \
+        --from-literal=SPAWN_PROTECTION=$MINECRAFT_SPAWN_PROTECTION \
+        --from-literal=VIEW_DISTANCE=$MINECRAFT_VIEW_DISTANCE \
+        --from-literal=SIMULATION_DISTANCE=$MINECRAFT_SIMULATION_DISTANCE \
+        --from-literal=TZ=$TIMEZONE \
         $mod_literals \
         --dry-run=client -o yaml | kubectl apply -f - || handle_error "Failed to create minecraft-config ConfigMap" "kubernetes"
 
@@ -805,10 +848,10 @@ EOF
             --from-literal=EULA=TRUE \
             --from-literal=GAMEMODE="$MINECRAFT_MODE" \
             --from-literal=DIFFICULTY="$MINECRAFT_DIFFICULTY" \
-            --from-literal=SERVER_NAME="${PROJECT_NAME} Bedrock Server" \
-            --from-literal=LEVEL_NAME="$PROJECT_NAME" \
+            --from-literal=SERVER_NAME="$MINECRAFT_BEDROCK_SERVER_NAME" \
+            --from-literal=LEVEL_NAME="$MINECRAFT_BEDROCK_LEVEL_NAME" \
             --from-literal=ALLOW_CHEATS=false \
-            --from-literal=TZ=America/Sao_Paulo \
+            --from-literal=TZ=$TIMEZONE \
             --dry-run=client -o yaml | kubectl apply -f - || handle_error "Failed to create minecraft-bedrock-config ConfigMap" "kubernetes"
     fi
 
@@ -816,6 +859,8 @@ EOF
     echo -e "${YELLOW}Applying Kubernetes deployments...${NC}"
     kubectl apply -f deployment/kubernetes/base/volume-claims.yaml -n $NAMESPACE || handle_error "Failed to apply volume claims" "kubernetes"
     kubectl apply -f deployment/kubernetes/base/minecraft-java-deployment.yaml -n $NAMESPACE || handle_error "Failed to deploy Minecraft Java" "kubernetes"
+    kubectl apply -f deployment/kubernetes/base/rcon-web-admin-deployment.yaml -n $NAMESPACE || handle_error "Failed to deploy RCON Web Admin" "kubernetes"
+    kubectl apply -f deployment/kubernetes/base/auto-updater.yaml -n $NAMESPACE || handle_error "Failed to deploy auto-updater" "kubernetes"
 
     if [[ "$USE_BEDROCK" == "true" ]]; then
         kubectl apply -f deployment/kubernetes/base/minecraft-bedrock-deployment.yaml -n $NAMESPACE || handle_error "Failed to deploy Minecraft Bedrock" "kubernetes"
@@ -842,6 +887,7 @@ EOF
     # Wait for deployments to be ready
     echo -e "${YELLOW}Waiting for deployments to be ready...${NC}"
     kubectl rollout status deployment/minecraft-java -n $NAMESPACE --timeout=300s || echo -e "${YELLOW}Minecraft Java deployment still in progress...${NC}"
+    kubectl rollout status deployment/rcon-web-admin -n $NAMESPACE --timeout=300s || echo -e "${YELLOW}RCON Web Admin deployment still in progress...${NC}"
     
     if [[ "$USE_BEDROCK" == "true" ]]; then
         kubectl rollout status deployment/minecraft-bedrock -n $NAMESPACE --timeout=300s || echo -e "${YELLOW}Minecraft Bedrock deployment still in progress...${NC}"
@@ -854,244 +900,202 @@ EOF
     echo -e "${GREEN}Minecraft deployed to Kubernetes successfully.${NC}"
 }
 
-# Deploy local Docker
-function deploy_local {
-    echo -e "${BLUE}Deploying Minecraft locally with Docker...${NC}"
-    
-    # Create necessary directories
-    mkdir -p data/minecraft-java
-    # mkdir -p data/minecraft-bedrock
-    # mkdir -p data/rcon
-    # mkdir -p data/prometheus
-    # mkdir -p data/grafana
-    
-    # Create a docker compose file with our parameters
-    echo -e "${YELLOW}Creating docker-compose.yml with:${NC}"
-    echo -e "  Version: ${YELLOW}$MINECRAFT_VERSION${NC}"
-    echo -e "  Server Type: ${YELLOW}$SERVER_TYPE${NC}"
-    echo -e "  Game Mode: ${YELLOW}$MINECRAFT_MODE${NC}"
-    echo -e "  Difficulty: ${YELLOW}$MINECRAFT_DIFFICULTY${NC}"
-    echo -e "  Memory: ${YELLOW}$MEMORY${NC}"
-    echo -e "  Bedrock Edition: ${YELLOW}$([[ "$USE_BEDROCK" == "true" ]] && echo "Enabled" || echo "Disabled")${NC}"
-    if [[ -n "$MODRINTH_PROJECTS" ]]; then
-        echo -e "  Mods (Modrinth): ${YELLOW}$MODRINTH_PROJECTS${NC}"
-    fi
-    
-# Create the docker-compose.yml file
-    cat > docker-compose.yml << EOF
+function generate_docker_compose_file {
+        local compose_file="$1"
+        local data_prefix="$2"
+
+        cat > "$compose_file" << EOF
 version: '3.8'
 
 services:
-  # Java Edition Minecraft Server
-  minecraft-java:
-    image: itzg/minecraft-server:latest
-    container_name: minecraft-java
-    environment:
-      - EULA=TRUE
-      - VERSION=$MINECRAFT_VERSION
-      - TYPE=$SERVER_TYPE
-      - MEMORY=$MEMORY
-      - DIFFICULTY=$MINECRAFT_DIFFICULTY
-      - MODE=$MINECRAFT_MODE
-      - MOTD=Mineclifford — 15 slots vanilla
-      - MAX_PLAYERS=15
-      - ONLINE_MODE=FALSE
-      - ALLOW_NETHER=true
-      - ENABLE_COMMAND_BLOCK=false
-      - SPAWN_PROTECTION=0
-      - VIEW_DISTANCE=8
-      - SIMULATION_DISTANCE=6
-      - JVM_XX_OPTS=-XX:+UseG1GC -XX:G1HeapRegionSize=4M -XX:+UnlockExperimentalVMOptions -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200
-      - TZ=America/Sao_Paulo
+    # Java Edition Minecraft Server
+    minecraft-java:
+        image: itzg/minecraft-server:latest
+        container_name: minecraft-java
+        environment:
+            - EULA=TRUE
+            - VERSION=$MINECRAFT_VERSION
+            - TYPE=$SERVER_TYPE
+            - MEMORY=$MEMORY
+            - DIFFICULTY=$MINECRAFT_DIFFICULTY
+            - MODE=$MINECRAFT_MODE
+            - MOTD=$MINECRAFT_JAVA_MOTD
+            - MAX_PLAYERS=$MINECRAFT_MAX_PLAYERS
+            - ONLINE_MODE=$MINECRAFT_ONLINE_MODE
+            - ENABLE_RCON=true
+            - RCON_PASSWORD=$RCON_PASSWORD
+            - ALLOW_NETHER=$MINECRAFT_ALLOW_NETHER
+            - ENABLE_COMMAND_BLOCK=$MINECRAFT_ENABLE_COMMAND_BLOCK
+            - SPAWN_PROTECTION=$MINECRAFT_SPAWN_PROTECTION
+            - VIEW_DISTANCE=$MINECRAFT_VIEW_DISTANCE
+            - SIMULATION_DISTANCE=$MINECRAFT_SIMULATION_DISTANCE
+            - JVM_XX_OPTS=-XX:+UseG1GC -XX:G1HeapRegionSize=4M -XX:+UnlockExperimentalVMOptions -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200
+            - TZ=$TIMEZONE
 EOF
 
-    # Add Modrinth mod configuration if specified
-    if [[ -n "$MODRINTH_PROJECTS" ]]; then
-        echo -e "${YELLOW}Adding Modrinth mod configuration...${NC}"
-        cat >> docker-compose.yml << EOF
-      - MODRINTH_PROJECTS=$MODRINTH_PROJECTS
-      - MODRINTH_DOWNLOAD_DEPENDENCIES=$MODRINTH_DOWNLOAD_DEPS
+        if [[ -n "$MODRINTH_PROJECTS" ]]; then
+                cat >> "$compose_file" << EOF
+            - MODRINTH_PROJECTS=$MODRINTH_PROJECTS
+            - MODRINTH_DOWNLOAD_DEPENDENCIES=$MODRINTH_DOWNLOAD_DEPS
 EOF
-    fi
+        fi
 
-    # Add mod loader version if specified
-    if [[ -n "$MOD_LOADER_VERSION" ]]; then
-        case "$SERVER_TYPE" in
-            FABRIC)
-                cat >> docker-compose.yml << EOF
-      - FABRIC_LOADER_VERSION=$MOD_LOADER_VERSION
+        if [[ -n "$MOD_LOADER_VERSION" ]]; then
+                case "$SERVER_TYPE" in
+                        FABRIC)
+                                cat >> "$compose_file" << EOF
+            - FABRIC_LOADER_VERSION=$MOD_LOADER_VERSION
 EOF
-                ;;
-            FORGE)
-                cat >> docker-compose.yml << EOF
-      - FORGE_VERSION=$MOD_LOADER_VERSION
+                                ;;
+                        FORGE)
+                                cat >> "$compose_file" << EOF
+            - FORGE_VERSION=$MOD_LOADER_VERSION
 EOF
-                ;;
-            NEOFORGE)
-                cat >> docker-compose.yml << EOF
-      - NEOFORGE_VERSION=$MOD_LOADER_VERSION
+                                ;;
+                        NEOFORGE)
+                                cat >> "$compose_file" << EOF
+            - NEOFORGE_VERSION=$MOD_LOADER_VERSION
 EOF
-                ;;
-        esac
-    fi
+                                ;;
+                esac
+        fi
 
-    # Add world import configuration if enabled
-    if [[ "$MINECRAFT_WORLD_IMPORT_READY" == "true" && -d "$MINECRAFT_WORLD_IMPORT_DIR" ]]; then
-        echo -e "${YELLOW}Adding world import configuration...${NC}"
-        
-        # Append the WORLD environment variable pointing to the archive file
-        cat >> docker-compose.yml << EOF
-      - WORLD=/import_world/world.tar.gz
+        if [[ "$MINECRAFT_WORLD_IMPORT_READY" == "true" && -d "$MINECRAFT_WORLD_IMPORT_DIR" ]]; then
+                cat >> "$compose_file" << EOF
+            - WORLD=/import_world/world.tar.gz
 EOF
-    fi
+        fi
 
-    # Continue with the rest of docker-compose.yml
-    cat >> docker-compose.yml << EOF
-    ports:
-      - "25565:25565"
-    volumes:
-      - ./data/minecraft-java:/data
+        cat >> "$compose_file" << EOF
+        ports:
+            - "25565:25565"
+        volumes:
+            - ${data_prefix}/minecraft-java:/data
+        labels:
+            - "com.centurylinklabs.watchtower.enable=true"
+            - "com.centurylinklabs.watchtower.stop-signal=SIGTERM"
 EOF
 
-    # Add world import volume mount if enabled
-    if [[ "$MINECRAFT_WORLD_IMPORT_READY" == "true" && -d "$MINECRAFT_WORLD_IMPORT_DIR" ]]; then
-        cat >> docker-compose.yml << EOF
-      - $MINECRAFT_WORLD_IMPORT_DIR:/import_world:ro
+        if [[ "$MINECRAFT_WORLD_IMPORT_READY" == "true" && -d "$MINECRAFT_WORLD_IMPORT_DIR" ]]; then
+                cat >> "$compose_file" << EOF
+            - $MINECRAFT_WORLD_IMPORT_DIR:/import_world:ro
 EOF
-    fi
+        fi
 
-    # Add restart policy and network for minecraft-java
-    cat >> docker-compose.yml << EOF
-    restart: unless-stopped
-    networks:
-      - minecraft_network
+        cat >> "$compose_file" << EOF
+        restart: unless-stopped
+        networks:
+            - minecraft_network
 EOF
 
-    # Add Bedrock if enabled
-    if [[ "$USE_BEDROCK" == "true" ]]; then
-      cat >> docker-compose.yml << EOF
+        if [[ "$USE_BEDROCK" == "true" ]]; then
+            cat >> "$compose_file" << EOF
 
-  # Bedrock Edition Minecraft Server
-  minecraft-bedrock:
-    image: itzg/minecraft-bedrock-server:latest
-    container_name: minecraft-bedrock
-    environment:
-      - EULA=TRUE
-      - GAMEMODE=$MINECRAFT_MODE
-      - DIFFICULTY=$MINECRAFT_DIFFICULTY
-      - SERVER_NAME=Mineclifford Bedrock Server
-      - LEVEL_NAME=Mineclifford
-      - ALLOW_CHEATS=false
-      - TZ=America/Sao_Paulo
-    ports:
-      - "19132:19132/udp"
-    volumes:
-      - ./data/minecraft-bedrock:/data
-    restart: unless-stopped
-    networks:
-      - minecraft_network
+    # Bedrock Edition Minecraft Server
+    minecraft-bedrock:
+        image: itzg/minecraft-bedrock-server:latest
+        container_name: minecraft-bedrock
+        environment:
+            - EULA=TRUE
+            - GAMEMODE=$MINECRAFT_MODE
+            - DIFFICULTY=$MINECRAFT_DIFFICULTY
+            - SERVER_NAME=$MINECRAFT_BEDROCK_SERVER_NAME
+            - LEVEL_NAME=$MINECRAFT_BEDROCK_LEVEL_NAME
+            - ALLOW_CHEATS=false
+            - TZ=$TIMEZONE
+        ports:
+            - "19132:19132/udp"
+        volumes:
+            - ${data_prefix}/minecraft-bedrock:/data
+        labels:
+            - "com.centurylinklabs.watchtower.enable=true"
+            - "com.centurylinklabs.watchtower.stop-signal=SIGTERM"
+        restart: unless-stopped
+        networks:
+            - minecraft_network
 EOF
-    fi
-    
-    # Finish the compose file with just the network (non-essential services disabled)
-    cat >> docker-compose.yml << EOF
+        fi
+
+        cat >> "$compose_file" << EOF
+
+    # RCON Web Admin
+    rcon-web-admin:
+        image: itzg/rcon:latest
+        ports:
+            - "127.0.0.1:4326:4326"
+            - "127.0.0.1:4327:4327"
+        volumes:
+            - ${data_prefix}/rcon:/opt/rcon-web-admin/db
+        environment:
+            - RWA_PASSWORD=$RCON_PASSWORD
+            - RWA_ADMIN=true
+            - RWA_RCON_HOST=minecraft-java
+            - RWA_RCON_PORT=25575
+            - RWA_RCON_PASSWORD=$RCON_PASSWORD
+        depends_on:
+            - minecraft-java
+        restart: unless-stopped
+        networks:
+            - minecraft_network
+
+    # Watchtower auto-updater
+    watchtower:
+        image: containrrr/watchtower:latest
+        volumes:
+            - /var/run/docker.sock:/var/run/docker.sock
+        environment:
+            - WATCHTOWER_LABEL_ENABLE=true
+            - WATCHTOWER_ROLLING_RESTART=true
+            - WATCHTOWER_STOP_TIMEOUT=120s
+            - WATCHTOWER_CLEANUP=true
+            - WATCHTOWER_POLL_INTERVAL=86400
+        restart: unless-stopped
+        networks:
+            - minecraft_network
+EOF
+
+        cat >> "$compose_file" << EOF
 
 networks:
-  minecraft_network:
-    driver: bridge
+    minecraft_network:
+        driver: bridge
 EOF
+}
 
-    # # Add RCON and monitoring (disabled — focus resources on minecraft-java)
-    # cat >> docker-compose.yml << EOF
-    #
-    #   # RCON Web Admin
-    #   rcon-web-admin:
-    #     image: itzg/rcon:latest
-    #     container_name: rcon-web-admin
-    #     ports:
-    #       - "4326:4326"
-    #       - "4327:4327"
-    #     volumes:
-    #       - ./data/rcon:/opt/rcon-web-admin/db
-    #     environment:
-    #       - RWA_PASSWORD=minecraft
-    #       - RWA_ADMIN=true
-    #     depends_on:
-    #       - minecraft-java
-    #     restart: unless-stopped
-    #     networks:
-    #       - minecraft_network
-    #
-    #   # Prometheus for monitoring
-    #   prometheus:
-    #     image: prom/prometheus:latest
-    #     container_name: prometheus
-    #     ports:
-    #       - "9090:9090"
-    #     volumes:
-    #       - ./data/prometheus:/prometheus
-    #       - ./deployment/swarm/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-    #       - ./deployment/swarm/prometheus/rules:/etc/prometheus/rules
-    #     command:
-    #       - '--config.file=/etc/prometheus/prometheus.yml'
-    #       - '--storage.tsdb.path=/prometheus'
-    #       - '--web.console.libraries=/usr/share/prometheus/console_libraries'
-    #       - '--web.console.templates=/usr/share/prometheus/consoles'
-    #     restart: unless-stopped
-    #     networks:
-    #       - minecraft_network
-    #
-    #   # Grafana for visualization
-    #   grafana:
-    #     image: grafana/grafana:latest
-    #     container_name: grafana
-    #     ports:
-    #       - "3000:3000"
-    #     volumes:
-    #       - ./data/grafana:/var/lib/grafana
-    #       - ./deployment/swarm/grafana/dashboards:/etc/grafana/provisioning/dashboards
-    #     environment:
-    #       - GF_SECURITY_ADMIN_PASSWORD=admin
-    #       - GF_USERS_ALLOW_SIGN_UP=false
-    #     restart: unless-stopped
-    #     networks:
-    #       - minecraft_network
-    #
-    #   # Minecraft exporter for Prometheus
-    #   minecraft-exporter:
-    #     image: hkubota/minecraft-exporter:latest
-    #     container_name: minecraft-exporter
-    #     ports:
-    #       - "9150:9150"
-    #     environment:
-    #       - MC_SERVER=minecraft-java
-    #       - MC_PORT=25565
-    #     restart: unless-stopped
-    #     networks:
-    #       - minecraft_network
-    #
-    # networks:
-    #   minecraft_network:
-    #     driver: bridge
-    # EOF
-    
-    # Start the services
-    echo -e "${YELLOW}Starting Minecraft servers...${NC}"
-    docker compose up -d || handle_error "Failed to start Docker containers" "local"
-    
-    # Check status
-    echo -e "${YELLOW}Checking if services are running...${NC}"
-    sleep 10
-    docker compose ps || handle_error "Failed to check Docker container status" "local"
-    
-    echo -e "${GREEN}Local deployment completed successfully.${NC}"
-    echo -e "${YELLOW}Access Minecraft Java server at: localhost:25565${NC}"
-    if [[ "$USE_BEDROCK" == "true" ]]; then
-        echo -e "${YELLOW}Access Minecraft Bedrock server at: localhost:19132${NC}"
-    fi
-    # echo -e "${YELLOW}Access Grafana at: http://localhost:3000 (admin/admin)${NC}"
-    # echo -e "${YELLOW}Access Prometheus at: http://localhost:9090${NC}"
-    # echo -e "${YELLOW}Access RCON Web Admin at: http://localhost:4326 (admin/minecraft)${NC}"
+function deploy_local_compose {
+        echo -e "${BLUE}Deploying Minecraft locally with Docker Compose...${NC}"
+
+        mkdir -p data/minecraft-java
+    mkdir -p data/rcon
+        if [[ "$USE_BEDROCK" == "true" ]]; then
+                mkdir -p data/minecraft-bedrock
+        fi
+
+        echo -e "${YELLOW}Creating docker-compose.yml with:${NC}"
+        echo -e "  Version: ${YELLOW}$MINECRAFT_VERSION${NC}"
+        echo -e "  Server Type: ${YELLOW}$SERVER_TYPE${NC}"
+        echo -e "  Game Mode: ${YELLOW}$MINECRAFT_MODE${NC}"
+        echo -e "  Difficulty: ${YELLOW}$MINECRAFT_DIFFICULTY${NC}"
+        echo -e "  Memory: ${YELLOW}$MEMORY${NC}"
+        echo -e "  Bedrock Edition: ${YELLOW}$([[ "$USE_BEDROCK" == "true" ]] && echo "Enabled" || echo "Disabled")${NC}"
+        if [[ -n "$MODRINTH_PROJECTS" ]]; then
+                echo -e "  Mods (Modrinth): ${YELLOW}$MODRINTH_PROJECTS${NC}"
+        fi
+
+        generate_docker_compose_file "docker-compose.yml" "./data"
+
+        echo -e "${YELLOW}Starting Minecraft servers...${NC}"
+        docker compose -f docker-compose.yml up -d || handle_error "Failed to start Docker containers" "compose"
+
+        echo -e "${YELLOW}Checking if services are running...${NC}"
+        sleep 10
+        docker compose -f docker-compose.yml ps || handle_error "Failed to check Docker container status" "compose"
+
+        echo -e "${GREEN}Local deployment completed successfully.${NC}"
+        echo -e "${YELLOW}Access Minecraft Java server at: localhost:25565${NC}"
+        if [[ "$USE_BEDROCK" == "true" ]]; then
+                echo -e "${YELLOW}Access Minecraft Bedrock server at: localhost:19132${NC}"
+        fi
 }
 
 # Backup Minecraft worlds
@@ -1103,7 +1107,7 @@ function backup_worlds {
     local TIMESTAMP=$(date +%Y%m%d_%H%M%S)
     mkdir -p "$BACKUP_DIR"
     
-if [[ "$ORCHESTRATION" == "local" ]]; then
+if [[ "$ORCHESTRATION" == "compose" && "$SKIP_TERRAFORM" == "true" ]]; then
         # Back up local volumes
         echo -e "${YELLOW}Backing up local Minecraft Java world...${NC}"
         tar -czf "$BACKUP_DIR/minecraft_java_$TIMESTAMP.tar.gz" -C data/minecraft-java .
@@ -1113,7 +1117,7 @@ if [[ "$ORCHESTRATION" == "local" ]]; then
             tar -czf "$BACKUP_DIR/minecraft_bedrock_$TIMESTAMP.tar.gz" -C data/minecraft-bedrock .
         fi
         
-    elif [[ "$ORCHESTRATION" == "swarm" ]]; then
+    elif [[ "$ORCHESTRATION" == "swarm" || ( "$ORCHESTRATION" == "compose" && "$SKIP_TERRAFORM" != "true" ) ]]; then
         # Backup remote Docker Swarm volumes
         if [[ ! -f "static_ip.ini" ]]; then
             handle_error "Inventory file static_ip.ini not found" "backup"
@@ -1237,7 +1241,7 @@ function restore_worlds {
     echo -e "${YELLOW}Selected backup: $selected_backup${NC}"
     
     # Restore based on orchestration method
-    if [[ "$ORCHESTRATION" == "local" ]]; then
+    if [[ "$ORCHESTRATION" == "compose" && "$SKIP_TERRAFORM" == "true" ]]; then
         # Restore local volumes
         if [[ -f "$BACKUP_DIR/$selected_backup/minecraft_java_$selected_backup.tar.gz" ]]; then
             echo -e "${YELLOW}Stopping Docker containers...${NC}"
@@ -1512,13 +1516,38 @@ EOF
 function check_status {
     echo -e "${BLUE}Checking deployment status...${NC}"
     
-    if [[ "$ORCHESTRATION" == "local" ]]; then
-        # Check local Docker containers
-        if command -v docker &> /dev/null; then
-            echo -e "${YELLOW}Checking Docker containers:${NC}"
-            docker ps --filter "name=minecraft" || handle_error "Failed to check Docker containers" "status"
+    if [[ "$ORCHESTRATION" == "compose" ]]; then
+        if [[ "$SKIP_TERRAFORM" == "true" ]]; then
+            # Check local Docker Compose services
+            if command -v docker &> /dev/null; then
+                echo -e "${YELLOW}Checking local Docker Compose services:${NC}"
+                docker compose -f docker-compose.yml ps || handle_error "Failed to check local Docker Compose services" "status"
+                echo -e "RCON Web Admin: http://127.0.0.1:4326"
+            else
+                handle_error "Docker is not installed" "status"
+            fi
         else
-            handle_error "Docker is not installed" "status"
+            # Check remote Docker Compose services
+            if [[ -f "static_ip.ini" ]]; then
+                MANAGER_IP=$(grep -A1 '\[instance1\]' static_ip.ini | tail -n1 | awk '{print $1}')
+
+                if [[ -n "$MANAGER_IP" ]]; then
+                    echo -e "${YELLOW}Checking remote Docker Compose services on $MANAGER_IP:${NC}"
+                    ssh $SSH_OPTS -i ssh_keys/instance1.pem ubuntu@$MANAGER_IP "docker compose -f /home/ubuntu/mineclifford-compose/docker-compose.yml ps" || handle_error "Failed to check remote Docker Compose services" "status"
+
+                    # Get connection information
+                    echo -e "${YELLOW}Connection Information:${NC}"
+                    echo -e "Java Server: $MANAGER_IP:25565"
+                    if [[ "$USE_BEDROCK" == "true" ]]; then
+                        echo -e "Bedrock Server: $MANAGER_IP:19132 (UDP)"
+                    fi
+                    echo -e "RCON Web Admin (SSH tunnel): ssh -L 4326:127.0.0.1:4326 ubuntu@$MANAGER_IP"
+                else
+                    handle_error "Could not find manager IP in inventory" "status"
+                fi
+            else
+                handle_error "Inventory file static_ip.ini not found" "status"
+            fi
         fi
         
     elif [[ "$ORCHESTRATION" == "swarm" ]]; then
@@ -1617,6 +1646,8 @@ function check_status {
             fi
             
             # Get dashboard information
+            echo -e "RCON Web Admin: kubectl -n $NAMESPACE port-forward svc/rcon-web-admin 4326:4326"
+
             GRAFANA_URL=$(kubectl get ingress -n $NAMESPACE -o jsonpath="{.items[?(@.metadata.name=='grafana')].spec.rules[0].host}" 2>/dev/null)
             if [[ -n "$GRAFANA_URL" ]]; then
                 echo -e "Grafana Dashboard: https://$GRAFANA_URL (admin/admin)"
@@ -1652,10 +1683,10 @@ function destroy_infrastructure {
         fi
     fi
     
-    if [[ "$ORCHESTRATION" == "local" ]]; then
-        # Destroy local Docker containers
-        echo -e "${YELLOW}Stopping and removing Docker containers...${NC}"
-        docker compose down -v || handle_error "Failed to stop Docker containers" "destroy"
+    if [[ "$ORCHESTRATION" == "compose" && "$SKIP_TERRAFORM" == "true" ]]; then
+        # Destroy local Docker Compose containers
+        echo -e "${YELLOW}Stopping and removing Docker Compose containers...${NC}"
+        docker compose -f docker-compose.yml down -v || handle_error "Failed to stop Docker containers" "destroy"
         
         # Remove data directories if forced
         if [[ "$FORCE_CLEANUP" == "true" ]]; then
@@ -1663,7 +1694,7 @@ function destroy_infrastructure {
             rm -rf data/
         fi
         
-    elif [[ "$ORCHESTRATION" == "swarm" || "$ORCHESTRATION" == "kubernetes" ]]; then
+    elif [[ "$ORCHESTRATION" == "swarm" || "$ORCHESTRATION" == "kubernetes" || "$ORCHESTRATION" == "compose" ]]; then
         # Based on provider, call the right terraform destroy
         if [[ "$PROVIDER" == "aws" ]]; then
             tf_dir="terraform/aws"
@@ -1683,6 +1714,15 @@ function destroy_infrastructure {
             if [[ -n "$MANAGER_IP" ]]; then
                 echo -e "${YELLOW}Removing Docker stack from $MANAGER_IP...${NC}"
                 ssh $SSH_OPTS -i ssh_keys/instance1.pem ubuntu@$MANAGER_IP "docker stack rm Mineclifford" || echo -e "${YELLOW}Failed to remove Docker stack, continuing with destroy...${NC}"
+            fi
+        fi
+
+        # For cloud compose, stop compose before Terraform destroy
+        if [[ "$ORCHESTRATION" == "compose" && -f "static_ip.ini" ]]; then
+            MANAGER_IP=$(grep -A1 '\[instance1\]' static_ip.ini | tail -n1 | awk '{print $1}')
+            if [[ -n "$MANAGER_IP" ]]; then
+                echo -e "${YELLOW}Removing Docker Compose services from $MANAGER_IP...${NC}"
+                ssh $SSH_OPTS -i ssh_keys/instance1.pem ubuntu@$MANAGER_IP "docker compose -f /home/ubuntu/mineclifford-compose/docker-compose.yml down -v" || echo -e "${YELLOW}Failed to remove Docker Compose services, continuing with destroy...${NC}"
             fi
         fi
         
@@ -1715,14 +1755,18 @@ function deploy_infrastructure {
     echo -e "Provider: ${BLUE}$PROVIDER${NC}"
     echo -e "Orchestration: ${BLUE}$ORCHESTRATION${NC}"
 
+    initialize_runtime_config
+
     # Ensure RCON/Grafana passwords are loaded or generated
     ensure_passwords
 
-    # In the deploy_infrastructure function
-    if [[ "$PROVIDER" == "aws" ]]; then
-        KUBERNETES_PROVIDER="eks"
-    elif [[ "$PROVIDER" == "azure" ]]; then
-        KUBERNETES_PROVIDER="aks"
+    # In cloud modes we derive default Kubernetes provider from cloud provider
+    if [[ "$ORCHESTRATION" != "compose" || "$SKIP_TERRAFORM" != "true" ]]; then
+        if [[ "$PROVIDER" == "aws" ]]; then
+            KUBERNETES_PROVIDER="eks"
+        elif [[ "$PROVIDER" == "azure" ]]; then
+            KUBERNETES_PROVIDER="aks"
+        fi
     fi
     
     echo -e "Server Names: ${BLUE}${SERVER_NAMES[*]}${NC}"
@@ -1766,23 +1810,32 @@ function deploy_infrastructure {
     
     echo -e "${GREEN}==========================================${NC}"
     
-    # Try to reuse previously saved state before planning/applying changes.
-    # This prevents duplicate infrastructure when running from another machine/workspace.
-    if [[ "$SAVE_STATE" == "true" ]]; then
-        load_terraform_state || true
-    fi
+    if [[ "$ORCHESTRATION" == "compose" && "$SKIP_TERRAFORM" == "true" ]]; then
+        echo -e "${YELLOW}Compose local mode selected. Skipping Terraform and Ansible.${NC}"
+        deploy_local_compose
+    else
+        # Try to reuse previously saved state before planning/applying changes.
+        # This prevents duplicate infrastructure when running from another machine/workspace.
+        if [[ "$SAVE_STATE" == "true" ]]; then
+            load_terraform_state || true
+        fi
 
-    run_terraform
+        run_terraform
 
-    if [[ "$SAVE_STATE" == "true" ]]; then
-        save_terraform_state || true
-    fi
+        if [[ "$SAVE_STATE" == "true" ]]; then
+            save_terraform_state || true
+        fi
 
-    if [[ "$ORCHESTRATION" != "kubernetes" ]]; then
-        run_ansible
-    else                                                
-        echo -e "${YELLOW}Skipping Ansible for Kubernetes deployment and proceeding directly to Kubernetes setup...${NC}"
-        deploy_to_kubernetes
+        if [[ "$ORCHESTRATION" == "kubernetes" ]]; then
+            echo -e "${YELLOW}Skipping Ansible for Kubernetes deployment and proceeding directly to Kubernetes setup...${NC}"
+            deploy_to_kubernetes
+        elif [[ "$ORCHESTRATION" == "compose" ]]; then
+            echo -e "${YELLOW}Preparing Docker Compose template for cloud deployment...${NC}"
+            generate_docker_compose_file "$SCRIPT_DIR/docker-compose.generated.yml" "./data"
+            run_ansible
+        else
+            run_ansible
+        fi
     fi
 
     # Show connection information
@@ -1920,6 +1973,12 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Backward-compatible alias: local => compose --skip-terraform
+if [[ "$ORCHESTRATION" == "local" ]]; then
+    ORCHESTRATION="compose"
+    SKIP_TERRAFORM=true
+fi
 
 # Validate environment
 validate_environment

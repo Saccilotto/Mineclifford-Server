@@ -19,6 +19,7 @@ spec:
       containers:
       - name: minecraft-java
         image: itzg/minecraft-server:latest
+        imagePullPolicy: Always
         envFrom:
         - configMapRef:
             name: minecraft-config

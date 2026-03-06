@@ -1,4 +1,4 @@
-- name: Configure Minecraft Server with Docker Swarm
+- name: Configure Minecraft Server with Docker (Swarm/Compose)
   hosts: all
   become: yes
   vars:
@@ -17,6 +17,8 @@
     grafana_password: "admin"
     timezone: "America/Sao_Paulo"
     single_node_swarm: "{{ groups['all'] | length == 1 }}"
+    orchestration_mode: "swarm"
+    compose_file_source: ""
 
   tasks:
   # Docker setup tasks
@@ -94,6 +96,7 @@
         - docker-ce
         - docker-ce-cli
         - containerd.io
+        - docker-compose-plugin
       state: present
       update_cache: yes
 
@@ -109,13 +112,14 @@
   - name: Check if node is already part of a swarm
     community.docker.docker_swarm_info:
     register: swarm_info
+    when: orchestration_mode == "swarm"
     ignore_errors: yes
     
   - name: Initialize Swarm on manager node
     community.docker.docker_swarm:
       state: present
       advertise_addr: "{{ inventory_hostname }}"
-    when: inventory_hostname == manager_node and (swarm_info.failed or not swarm_info.docker_swarm_active)
+    when: orchestration_mode == "swarm" and inventory_hostname == manager_node and (swarm_info.failed or not swarm_info.docker_swarm_active)
     register: swarm_init
     ignore_errors: yes
 
@@ -123,22 +127,22 @@
   - name: Get swarm worker token
     community.docker.docker_swarm_info:
     register: swarm_worker_info
-    when: inventory_hostname == manager_node and not single_node_swarm and groups['all'] | length > 1
+    when: orchestration_mode == "swarm" and inventory_hostname == manager_node and not single_node_swarm and groups['all'] | length > 1
 
   - name: Set worker token from swarm info
     set_fact:
       token_output: "{{ swarm_worker_info }}"
-    when: inventory_hostname == manager_node and not single_node_swarm and groups['all'] | length > 1
+    when: orchestration_mode == "swarm" and inventory_hostname == manager_node and not single_node_swarm and groups['all'] | length > 1
     
   - name: Set token fact on manager
     set_fact:
       worker_token: "{{ token_output.swarm_facts.JoinTokens.Worker }}"
-    when: inventory_hostname == manager_node and not single_node_swarm and token_output is defined and token_output.swarm_facts is defined
+    when: orchestration_mode == "swarm" and inventory_hostname == manager_node and not single_node_swarm and token_output is defined and token_output.swarm_facts is defined
     
   - name: Share token with workers
     set_fact:
       worker_token: "{{ hostvars[manager_node].worker_token }}"
-    when: inventory_hostname != manager_node and not single_node_swarm and hostvars[manager_node].worker_token is defined
+    when: orchestration_mode == "swarm" and inventory_hostname != manager_node and not single_node_swarm and hostvars[manager_node].worker_token is defined
     
   - name: Join workers to swarm
     community.docker.docker_swarm:
@@ -146,7 +150,7 @@
       advertise_addr: "{{ inventory_hostname }}"
       join_token: "{{ worker_token }}"
       remote_addrs: ["{{ manager_node }}:2377"]
-    when: inventory_hostname != manager_node and not single_node_swarm and worker_token is defined
+    when: orchestration_mode == "swarm" and inventory_hostname != manager_node and not single_node_swarm and worker_token is defined
     ignore_errors: yes
     
   # For single node swarm
@@ -155,7 +159,7 @@
       state: present
       advertise_addr: "{{ inventory_hostname }}"
       force: yes
-    when: single_node_swarm and (swarm_info.failed or not swarm_info.docker_swarm_active)
+    when: orchestration_mode == "swarm" and single_node_swarm and (swarm_info.failed or not swarm_info.docker_swarm_active)
     ignore_errors: yes
 
   - name: Import Minecraft world if provided
@@ -235,6 +239,7 @@
     vars:
       manager_ip: "{{ manager_ip_value }}"
       single_node_swarm: "{{ groups['all'] | length == 1 }}"
+    when: orchestration_mode == "swarm"
     delegate_to: "{{ manager_node }}"
     run_once: true
 
@@ -255,12 +260,56 @@
     vars:
       manager_ip: "{{ manager_ip_value }}"
       single_node_swarm: "{{ groups['all'] | length == 1 }}"
+    when: orchestration_mode == "swarm"
 
   # Deploy the stack
   - name: Deploy the Minecraft stack
     shell: docker stack deploy --with-registry-auth --prune -c /home/{{ ansible_ssh_user }}/stack.yml Mineclifford
     args:
       chdir: /home/{{ ansible_ssh_user }}
+    when: orchestration_mode == "swarm"
+    delegate_to: "{{ manager_node }}"
+    run_once: true
+
+  - name: Ensure remote compose directory exists
+    file:
+      path: /home/{{ ansible_ssh_user }}/mineclifford-compose/data/minecraft-java
+      state: directory
+      mode: '0755'
+    when: orchestration_mode == "compose"
+    delegate_to: "{{ manager_node }}"
+    run_once: true
+
+  - name: Ensure remote bedrock data directory exists
+    file:
+      path: /home/{{ ansible_ssh_user }}/mineclifford-compose/data/minecraft-bedrock
+      state: directory
+      mode: '0755'
+    when: orchestration_mode == "compose" and (minecraft_bedrock_enabled | default(false))
+    delegate_to: "{{ manager_node }}"
+    run_once: true
+
+  - name: Ensure remote rcon data directory exists
+    file:
+      path: /home/{{ ansible_ssh_user }}/mineclifford-compose/data/rcon
+      state: directory
+      mode: '0755'
+    when: orchestration_mode == "compose"
+    delegate_to: "{{ manager_node }}"
+    run_once: true
+
+  - name: Copy generated compose file to manager node
+    copy:
+      src: "{{ compose_file_source }}"
+      dest: /home/{{ ansible_ssh_user }}/mineclifford-compose/docker-compose.yml
+      mode: '0644'
+    when: orchestration_mode == "compose"
+    delegate_to: "{{ manager_node }}"
+    run_once: true
+
+  - name: Deploy Minecraft with Docker Compose on manager
+    shell: docker compose -f /home/{{ ansible_ssh_user }}/mineclifford-compose/docker-compose.yml up -d
+    when: orchestration_mode == "compose"
     delegate_to: "{{ manager_node }}"
     run_once: true
 
@@ -273,6 +322,14 @@
   - name: Check service status
     command: docker service ls
     register: service_status
+    when: orchestration_mode == "swarm"
+    delegate_to: "{{ manager_node }}"
+    run_once: true
+
+  - name: Check compose service status
+    command: docker compose -f /home/{{ ansible_ssh_user }}/mineclifford-compose/docker-compose.yml ps
+    register: compose_status
+    when: orchestration_mode == "compose"
     delegate_to: "{{ manager_node }}"
     run_once: true
 
@@ -280,7 +337,12 @@
   - name: Show service status
     debug:
       var: service_status.stdout_lines
-    when: service_status is defined
+    when: orchestration_mode == "swarm" and service_status is defined
+
+  - name: Show compose status
+    debug:
+      var: compose_status.stdout_lines
+    when: orchestration_mode == "compose" and compose_status is defined
     
   # Create backup script for Minecraft worlds
   - name: Create backup script for Minecraft worlds
@@ -294,8 +356,12 @@
 
         # Backup Java world
         echo "Backing up Java Edition world..."
+        {% if orchestration_mode == "compose" %}
+        tar -czf "$BACKUP_DIR/minecraft_java_$DATE.tar.gz" -C /home/{{ ansible_ssh_user }}/mineclifford-compose/data/minecraft-java .
+        {% else %}
         docker run --rm -v mineclifford_minecraft_java_data:/data -v $BACKUP_DIR:/backup \
           alpine tar -czf /backup/minecraft_java_$DATE.tar.gz -C /data .
+        {% endif %}
 
         # Keep only the last 5 backups
         cd $BACKUP_DIR

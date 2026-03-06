@@ -42,13 +42,22 @@ Deploy Minecraft servers to AWS or Azure using `minecraft-ops.sh`.
   --namespace mineclifford --project-name mycraft
 ```
 
-### Local Docker
+### Docker Compose (Local)
 
 ```bash
-./minecraft-ops.sh deploy --orchestration local
+./minecraft-ops.sh deploy --orchestration compose --skip-terraform
 ```
 
 No cloud credentials needed. Creates a `docker-compose.yml` and runs containers locally.
+(`--orchestration local` is kept as a backward-compatible alias.)
+
+### Docker Compose (Cloud VM)
+
+```bash
+./minecraft-ops.sh deploy --provider aws --orchestration compose
+```
+
+Provisions cloud VM infrastructure with Terraform, then runs Docker Compose on the manager node via Ansible.
 
 ### Modded Server (any orchestration)
 
@@ -60,8 +69,8 @@ Add `--server-type` and `--mods` to any deploy command. See [MODS.md](MODS.md) f
   --server-type FABRIC --mods "create-fabric,fabric-api" \
   --minecraft-version 1.20.1 --memory 4G
 
-# Create mod on local Docker (Forge)
-./minecraft-ops.sh deploy --orchestration local \
+# Create mod on local Docker Compose (Forge)
+./minecraft-ops.sh deploy --orchestration compose --skip-terraform \
   --server-type FORGE --mods "create" \
   --minecraft-version 1.20.1 --memory 4G
 ```

@@ -11,6 +11,7 @@ NC='\033[0m' # No Color
 PROVIDER="aws"
 ACTION="save"  # save or load
 STORAGE_TYPE="s3"  # s3, azure, or github
+ORCHESTRATION=""   # empty or "kubernetes"
 
 # Help function
 function show_help {
@@ -21,6 +22,7 @@ function show_help {
     echo -e "  -p, --provider    Specify cloud provider (aws or azure), default: aws"
     echo -e "  -a, --action      Action to perform (save or load), default: save"
     echo -e "  -s, --storage     Storage type (s3, azure, or github), default: s3"
+    echo -e "  -o, --orchestration  Orchestration type (swarm or kubernetes), default: empty"
     echo -e "  -h, --help        Show this help message"
     echo ""
     echo -e "Example: ./save-terraform-state.sh --provider aws --action save --storage s3"
@@ -41,6 +43,10 @@ while [[ $# -gt 0 ]]; do
             STORAGE_TYPE="$2"
             shift 2
             ;;
+        -o|--orchestration)
+            ORCHESTRATION="$2"
+            shift 2
+            ;;
         -h|--help)
             show_help
             exit 0
@@ -56,11 +62,15 @@ done
 # Store the absolute path to the project root directory
 PROJECT_ROOT=$(pwd)
 
-# Set terraform directory based on provider
+# Set terraform directory based on provider and orchestration
 if [[ "$PROVIDER" == "aws" ]]; then
     TERRAFORM_DIR="terraform/aws"
 elif [[ "$PROVIDER" == "azure" ]]; then
     TERRAFORM_DIR="terraform/azure"
+fi
+
+if [[ "$ORCHESTRATION" == "kubernetes" ]]; then
+    TERRAFORM_DIR="${TERRAFORM_DIR}/kubernetes"
 fi
 
 # Full path to terraform state
@@ -92,7 +102,7 @@ elif [[ "$PROVIDER" == "azure" ]]; then
 fi
 
 # GitHub-based storage variables
-GITHUB_REPO="${GITHUB_REPO:-mineclifford/mineclifford-server}"  # Override with env var if needed
+GITHUB_REPO="${GITHUB_REPO:-Saccilotto/Mineclifford-Server}"  # Override with env var if needed
 GITHUB_BRANCH="terraform-state"
 GITHUB_TOKEN="${GITHUB_TOKEN:-$GH_TOKEN}"
 

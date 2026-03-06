@@ -27,7 +27,7 @@ The main operations script for deploying, managing, and destroying Minecraft ser
 | Flag | Description | Default |
 | ---- | ----------- | ------- |
 | `-p, --provider <aws\|azure>` | Cloud provider | `aws` |
-| `-o, --orchestration <swarm\|kubernetes\|local>` | Orchestration method | `swarm` |
+| `-o, --orchestration <swarm\|kubernetes\|compose\|local>` | Orchestration method (`local` is alias for `compose --skip-terraform`) | `swarm` |
 | `-s, --skip-terraform` | Skip Terraform provisioning | `false` |
 | `-k, --k8s <eks\|aks>` | Kubernetes distribution (auto-set from provider) | `eks` |
 
@@ -101,8 +101,11 @@ For Kubernetes deployments (`--orchestration kubernetes`), tags are passed as a 
 ## Examples
 
 ```bash
-# Local development
-./minecraft-ops.sh deploy --orchestration local
+# Local development (compose mode)
+./minecraft-ops.sh deploy --orchestration compose --skip-terraform
+
+# Cloud VM with Docker Compose
+./minecraft-ops.sh deploy --provider aws --orchestration compose
 
 # AWS with Docker Swarm (defaults)
 ./minecraft-ops.sh deploy --provider aws --orchestration swarm
@@ -127,7 +130,7 @@ For Kubernetes deployments (`--orchestration kubernetes`), tags are passed as a 
 ./minecraft-ops.sh restore --provider aws --orchestration swarm
 
 # Deploy with Create mod (Fabric)
-./minecraft-ops.sh deploy --orchestration local \
+./minecraft-ops.sh deploy --orchestration compose --skip-terraform \
   --server-type FABRIC --mods "create-fabric,fabric-api" \
   --minecraft-version 1.20.1
 
@@ -148,6 +151,6 @@ On failure during deployment, the script can automatically roll back:
 - **Terraform failures**: runs `terraform destroy -auto-approve`
 - **Ansible/Swarm failures**: removes the Docker stack from the manager node
 - **Kubernetes failures**: deletes the namespace
-- **Local failures**: runs `docker compose down -v`
+- **Compose local failures**: runs `docker compose down -v`
 
 Disable with `--no-rollback`.

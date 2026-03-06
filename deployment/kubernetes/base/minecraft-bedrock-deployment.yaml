@@ -19,6 +19,7 @@ spec:
       containers:
       - name: minecraft-bedrock
         image: itzg/minecraft-bedrock-server:latest
+        imagePullPolicy: Always
         envFrom:
         - configMapRef:
             name: minecraft-bedrock-config

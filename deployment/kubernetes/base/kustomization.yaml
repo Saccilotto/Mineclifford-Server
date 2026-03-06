@@ -4,6 +4,8 @@ kind: Kustomization
 resources:
   - minecraft-java-deployment.yaml
   - minecraft-bedrock-deployment.yaml
+  - rcon-web-admin-deployment.yaml
+  - auto-updater.yaml
   - volume-claims.yaml
 
 commonLabels:
