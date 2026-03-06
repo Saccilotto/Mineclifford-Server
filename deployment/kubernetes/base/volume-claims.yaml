@@ -27,33 +27,3 @@ spec:
     requests:
       storage: 5Gi
   storageClassName: standard
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: prometheus-pvc
-  labels:
-    app: monitoring
-    component: prometheus
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 2Gi
-  storageClassName: standard
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: grafana-pvc
-  labels:
-    app: monitoring
-    component: grafana
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 2Gi
-  storageClassName: standard

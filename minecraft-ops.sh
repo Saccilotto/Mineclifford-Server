@@ -474,8 +474,10 @@ minecraft_java_spawn_protection: 0
 minecraft_java_view_distance: 8
 minecraft_java_simulation_distance: 6
 
-# Bedrock Edition — disabled (vanilla Java only)
-minecraft_bedrock_enabled: false
+# Bedrock Edition
+minecraft_bedrock_enabled: $USE_BEDROCK
+minecraft_bedrock_gamemode: "$MINECRAFT_MODE"
+minecraft_bedrock_difficulty: "$MINECRAFT_DIFFICULTY"
 
 # Monitoring Configuration
 rcon_password: "${RCON_PASSWORD:-$(openssl rand -base64 16)}"
@@ -709,24 +711,56 @@ spec:
 EOF
     fi
     
-    # Update deployments based on provider
+    # Generate ConfigMap with game settings from script variables
+    echo -e "${YELLOW}Generating Kubernetes ConfigMaps from script variables...${NC}"
+    kubectl create configmap minecraft-config -n $NAMESPACE \
+        --from-literal=EULA=TRUE \
+        --from-literal=VERSION="$MINECRAFT_VERSION" \
+        --from-literal=TYPE=VANILLA \
+        --from-literal=MEMORY="$MEMORY" \
+        --from-literal=DIFFICULTY="$MINECRAFT_DIFFICULTY" \
+        --from-literal=MODE="$MINECRAFT_MODE" \
+        --from-literal=MOTD="${PROJECT_NAME} Java Server" \
+        --from-literal=MAX_PLAYERS=15 \
+        --from-literal=ONLINE_MODE=FALSE \
+        --from-literal=ENABLE_RCON=true \
+        --from-literal=RCON_PASSWORD="${RCON_PASSWORD:-minecraft}" \
+        --from-literal=ALLOW_NETHER=true \
+        --from-literal=ENABLE_COMMAND_BLOCK=false \
+        --from-literal=SPAWN_PROTECTION=0 \
+        --from-literal=VIEW_DISTANCE=8 \
+        --from-literal=TZ=America/Sao_Paulo \
+        --dry-run=client -o yaml | kubectl apply -f - || handle_error "Failed to create minecraft-config ConfigMap" "kubernetes"
+
+    if [[ "$USE_BEDROCK" == "true" ]]; then
+        kubectl create configmap minecraft-bedrock-config -n $NAMESPACE \
+            --from-literal=EULA=TRUE \
+            --from-literal=GAMEMODE="$MINECRAFT_MODE" \
+            --from-literal=DIFFICULTY="$MINECRAFT_DIFFICULTY" \
+            --from-literal=SERVER_NAME="${PROJECT_NAME} Bedrock Server" \
+            --from-literal=LEVEL_NAME="$PROJECT_NAME" \
+            --from-literal=ALLOW_CHEATS=false \
+            --from-literal=TZ=America/Sao_Paulo \
+            --dry-run=client -o yaml | kubectl apply -f - || handle_error "Failed to create minecraft-bedrock-config ConfigMap" "kubernetes"
+    fi
+
+    # Apply base manifests
+    echo -e "${YELLOW}Applying Kubernetes deployments...${NC}"
+    kubectl apply -f deployment/kubernetes/base/volume-claims.yaml -n $NAMESPACE || handle_error "Failed to apply volume claims" "kubernetes"
+    kubectl apply -f deployment/kubernetes/base/minecraft-java-deployment.yaml -n $NAMESPACE || handle_error "Failed to deploy Minecraft Java" "kubernetes"
+
+    if [[ "$USE_BEDROCK" == "true" ]]; then
+        kubectl apply -f deployment/kubernetes/base/minecraft-bedrock-deployment.yaml -n $NAMESPACE || handle_error "Failed to deploy Minecraft Bedrock" "kubernetes"
+    fi
+
+    # Apply provider-specific patches
     if [[ "$PROVIDER" == "aws" ]]; then
-        echo -e "${YELLOW}Applying AWS-specific Kubernetes deployments...${NC}"
-        kubectl apply -k deployment/kubernetes/aws/ -n $NAMESPACE || handle_error "Failed to apply AWS Kubernetes manifests" "kubernetes"
+        echo -e "${YELLOW}Applying AWS-specific patches...${NC}"
+        kubectl apply -f deployment/kubernetes/aws/patches/storage-aws.yaml -n $NAMESPACE 2>/dev/null || true
+        kubectl apply -f deployment/kubernetes/aws/patches/services-aws.yaml -n $NAMESPACE 2>/dev/null || true
     elif [[ "$PROVIDER" == "azure" ]]; then
-        echo -e "${YELLOW}Applying Azure-specific Kubernetes deployments...${NC}"
-        kubectl apply -k deployment/kubernetes/azure/ -n $NAMESPACE || handle_error "Failed to apply Azure Kubernetes manifests" "kubernetes"
-    else
-        # Default to applying base configurations
-        echo -e "${YELLOW}Applying base Kubernetes deployments...${NC}"
-        kubectl apply -f deployment/kubernetes/base/minecraft-java-deployment.yaml -n $NAMESPACE || handle_error "Failed to deploy Minecraft Java" "kubernetes"
-        
-        if [[ "$USE_BEDROCK" == "true" ]]; then
-            kubectl apply -f deployment/kubernetes/base/minecraft-bedrock-deployment.yaml -n $NAMESPACE || handle_error "Failed to deploy Minecraft Bedrock" "kubernetes"
-        fi
-        
-        kubectl apply -f deployment/kubernetes/monitoring.yaml -n $NAMESPACE || handle_error "Failed to deploy monitoring" "kubernetes"
-        kubectl apply -f deployment/kubernetes/ingress.yaml -n $NAMESPACE || handle_error "Failed to deploy ingress" "kubernetes"
+        echo -e "${YELLOW}Applying Azure-specific patches...${NC}"
+        kubectl apply -f deployment/kubernetes/azure/patches/services-azure.yaml -n $NAMESPACE 2>/dev/null || true
     fi
     
     # Apply the patch for world import if needed
