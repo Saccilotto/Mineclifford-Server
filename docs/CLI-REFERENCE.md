@@ -38,9 +38,21 @@ The main operations script for deploying, managing, and destroying Minecraft ser
 | `-v, --minecraft-version VERSION` | Minecraft server version | `1.21.11` |
 | `-m, --mode <survival\|creative\|adventure\|spectator>` | Game mode | `survival` |
 | `-d, --difficulty <peaceful\|easy\|normal\|hard>` | Difficulty | `normal` |
-| `-b, --no-bedrock` | Skip Bedrock Edition deployment | Bedrock disabled |
+| `-b, --no-bedrock` | Disable Bedrock Edition deployment | Bedrock disabled |
+| `--bedrock, --use-bedrock` | Enable Bedrock Edition deployment | — |
 | `-mem, --memory MEMORY` | JVM memory allocation | `2G` |
 | `-w, --world-import FILE` | Import world from zip file | — |
+
+### Mod Support
+
+| Flag | Description | Default |
+| ---- | ----------- | ------- |
+| `--server-type TYPE` | Server type: `VANILLA`, `FORGE`, `FABRIC`, `NEOFORGE`, `PAPER` | `VANILLA` |
+| `--mods PROJECTS` | Comma-separated Modrinth project slugs | — |
+| `--mod-deps LEVEL` | Auto-download mod dependencies: `none`, `required`, `optional` | `required` |
+| `--mod-loader-version VERSION` | Specific mod loader version | latest |
+
+See [MODS.md](MODS.md) for detailed mod deployment documentation.
 
 ### Infrastructure Configuration
 
@@ -113,6 +125,16 @@ For Kubernetes deployments (`--orchestration kubernetes`), tags are passed as a 
 # Backup and restore
 ./minecraft-ops.sh backup --provider aws --orchestration swarm
 ./minecraft-ops.sh restore --provider aws --orchestration swarm
+
+# Deploy with Create mod (Fabric)
+./minecraft-ops.sh deploy --orchestration local \
+  --server-type FABRIC --mods "create-fabric,fabric-api" \
+  --minecraft-version 1.20.1
+
+# Deploy with Create mod (Forge) on AWS
+./minecraft-ops.sh deploy --provider aws --orchestration swarm \
+  --server-type FORGE --mods "create" \
+  --minecraft-version 1.20.1 --memory 4G
 ```
 
 ## Logging
@@ -126,6 +148,6 @@ On failure during deployment, the script can automatically roll back:
 - **Terraform failures**: runs `terraform destroy -auto-approve`
 - **Ansible/Swarm failures**: removes the Docker stack from the manager node
 - **Kubernetes failures**: deletes the namespace
-- **Local failures**: runs `docker-compose down -v`
+- **Local failures**: runs `docker compose down -v`
 
 Disable with `--no-rollback`.
