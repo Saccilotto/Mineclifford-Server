@@ -3,7 +3,7 @@ name: minecraft
 description: A Helm chart for Minecraft servers on Kubernetes
 type: application
 version: 0.1.0
-appVersion: "1.20.2"
+appVersion: "1.21.11"
 maintainers:
   - name: Mineclifford Team
 keywords:
@@ -15,10 +15,10 @@ sources:
   - https://github.com/itzg/docker-minecraft-bedrock-server
 dependencies:
   - name: prometheus
-    version: "15.10.1"
+    version: "25.27.0"
     repository: https://prometheus-community.github.io/helm-charts
     condition: prometheus.enabled
   - name: grafana
-    version: "6.40.3"
+    version: "8.6.4"
     repository: https://grafana.github.io/helm-charts
     condition: grafana.enabled

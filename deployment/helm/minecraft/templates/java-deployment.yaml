@@ -1,0 +1,46 @@
+{{- if .Values.javaEdition.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "minecraft.fullname" . }}-java
+  labels:
+    {{- include "minecraft.labels" . | nindent 4 }}
+    app.kubernetes.io/component: java
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "minecraft.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: java
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        {{- include "minecraft.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: java
+    spec:
+      containers:
+      - name: minecraft-java
+        image: "{{ .Values.javaEdition.image.repository }}:{{ .Values.javaEdition.image.tag }}"
+        imagePullPolicy: {{ .Values.javaEdition.image.pullPolicy }}
+        envFrom:
+        - configMapRef:
+            name: {{ include "minecraft.fullname" . }}-java-config
+        ports:
+        - containerPort: 25565
+          protocol: TCP
+        resources:
+          {{- toYaml .Values.javaEdition.resources | nindent 10 }}
+        volumeMounts:
+        - name: minecraft-java-data
+          mountPath: /data
+      volumes:
+      - name: minecraft-java-data
+        {{- if .Values.javaEdition.persistence.enabled }}
+        persistentVolumeClaim:
+          claimName: {{ include "minecraft.fullname" . }}-java-pvc
+        {{- else }}
+        emptyDir: {}
+        {{- end }}
+{{- end }}

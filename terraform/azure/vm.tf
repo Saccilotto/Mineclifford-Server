@@ -12,7 +12,7 @@ resource "azurerm_linux_virtual_machine" "vm" {
   
   network_interface_ids = [azurerm_network_interface.nic[each.key].id]
 
-  size               = "Standard_B2s"
+  size               = var.instance_type
   admin_username     = var.username
   disable_password_authentication = true
 
@@ -39,6 +39,6 @@ resource "azurerm_linux_virtual_machine" "vm" {
     storage_account_type = "Standard_LRS"
     name                 = "osdisk-${each.key}"
     caching              = "ReadWrite"
-    disk_size_gb         =  64
+    disk_size_gb         = var.disk_size_gb
   }
 }

@@ -1,0 +1,54 @@
+{{- if .Values.rcon.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "minecraft.fullname" . }}-rcon
+  labels:
+    {{- include "minecraft.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rcon
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "minecraft.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: rcon
+  template:
+    metadata:
+      labels:
+        {{- include "minecraft.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: rcon
+    spec:
+      containers:
+      - name: rcon-web-admin
+        image: "{{ .Values.rcon.image.repository }}:{{ .Values.rcon.image.tag }}"
+        imagePullPolicy: {{ .Values.rcon.image.pullPolicy }}
+        ports:
+        - containerPort: {{ .Values.rcon.webPort }}
+          protocol: TCP
+          name: web
+        - containerPort: {{ .Values.rcon.rconPort }}
+          protocol: TCP
+          name: rcon
+        env:
+        - name: RWA_PASSWORD
+          value: {{ .Values.rcon.password | quote }}
+        - name: RWA_ADMIN
+          value: {{ .Values.rcon.adminEnabled | quote }}
+        - name: RWA_RCON_HOST
+          value: {{ include "minecraft.fullname" . }}-java
+        - name: RWA_RCON_PORT
+          value: "25575"
+        - name: RWA_RCON_PASSWORD
+          value: {{ .Values.rcon.password | quote }}
+        volumeMounts:
+        - name: rcon-data
+          mountPath: /opt/rcon-web-admin/db
+      volumes:
+      - name: rcon-data
+        {{- if .Values.rcon.persistence.enabled }}
+        persistentVolumeClaim:
+          claimName: {{ include "minecraft.fullname" . }}-rcon-pvc
+        {{- else }}
+        emptyDir: {}
+        {{- end }}
+{{- end }}

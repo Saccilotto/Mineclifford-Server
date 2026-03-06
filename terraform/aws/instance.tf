@@ -42,7 +42,7 @@ resource "aws_instance" "instance" {
   vpc_security_group_ids = [aws_security_group.sg.id]
   
   root_block_device {
-    volume_size = 30        # 30 GB = free tier EBS limit
+    volume_size = var.disk_size_gb
     volume_type = "gp3"    # gp3 = free tier eligible, faster IOPS than gp2 at no extra cost
   }
   

@@ -41,6 +41,30 @@ variable "username" {
   default = "ubuntu"
 }
 
+variable "instance_type" {
+  description = "Azure VM size for standalone instances"
+  type        = string
+  default     = "Standard_B2s"
+}
+
+variable "disk_size_gb" {
+  description = "OS disk size in GB"
+  type        = number
+  default     = 30
+}
+
+variable "environment" {
+  description = "Deployment environment (production, staging, development, test)"
+  type        = string
+  default     = "production"
+}
+
+variable "owner" {
+  description = "Owner tag for resources"
+  type        = string
+  default     = "minecraft"
+}
+
 variable "azure_subscription_id" {
   description = "Azure Subscription ID"
   type        = string

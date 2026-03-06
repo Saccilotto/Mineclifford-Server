@@ -18,7 +18,7 @@ setup(
     description="Dynamic Minecraft server version manager",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/mineclifford",
+    url="https://github.com/Saccilotto/Mineclifford-Server",
     packages=find_packages(where="src"),
     package_dir={"": "src"},
     classifiers=[

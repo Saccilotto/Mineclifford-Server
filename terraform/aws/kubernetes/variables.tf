@@ -4,6 +4,12 @@ variable "region" {
   default     = "us-east-2"
 }
 
+variable "project_name" {
+  description = "Project name used for naming resources"
+  type        = string
+  default     = "mineclifford"
+}
+
 variable "server_names" {
   description = "List of server instance names to create"
   type        = list(string)
@@ -19,19 +25,19 @@ variable "cluster_name" {
 variable "kubernetes_version" {
   description = "Kubernetes version to use for the EKS cluster"
   type        = string
-  default     = "1.27"
+  default     = "1.31"
 }
 
 variable "node_instance_type" {
   description = "EC2 instance type for the node groups"
   type        = string
-  default     = "t2.small"
+  default     = "t3.medium"
 }
 
 variable "node_group_desired_capacity" {
   description = "Desired number of worker nodes"
   type        = number
-  default     = 2
+  default     = 1
 }
 
 variable "node_group_min_size" {
@@ -43,13 +49,13 @@ variable "node_group_min_size" {
 variable "node_group_max_size" {
   description = "Maximum number of worker nodes"
   type        = number
-  default     = 3
+  default     = 2
 }
 
 variable "node_disk_size" {
   description = "Disk size in GB for worker nodes"
   type        = number
-  default     = 80
+  default     = 30
 }
 
 variable "tags" {

@@ -1,4 +1,5 @@
 #!/bin/bash
+set -o pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -23,12 +24,21 @@ MINECRAFT_DIFFICULTY="normal"
 USE_BEDROCK=false
 NAMESPACE="mineclifford"
 KUBERNETES_PROVIDER="eks"      # eks, aks
-MEMORY="3G"
+MEMORY="2G"
 FORCE_CLEANUP=false
 SAVE_STATE=true
 STORAGE_TYPE="github"          # s3, azure, github
 SERVER_NAMES=("instance1")     # Default server names
+SINGLE_NODE_SWARM=true         # Default to single-node swarm
 WORLD_IMPORT=""
+PROJECT_NAME="mineclifford"
+ENVIRONMENT="production"        # production, staging, development, test
+OWNER="minecraft"
+AWS_REGION="sa-east-1"
+AZURE_LOCATION="East US 2"
+INSTANCE_TYPE=""                # auto-set per provider if empty
+DISK_SIZE_GB=30
+REGION_OVERRIDE=""
 
 # Create log file
 touch $DEPLOYMENT_LOG
@@ -47,10 +57,6 @@ if [[ -f ".env" ]]; then
     source .env
     set +o allexport
     
-    # Export Terraform-specific variables
-    if [[ "$PROVIDER" == "azure" ]]; then
-        export TF_VAR_azure_subscription_id="$AZURE_SUBSCRIPTION_ID"
-    fi
 else
     echo -e "${YELLOW}No .env file found. Using default values.${NC}"
 fi
@@ -81,7 +87,8 @@ function show_help {
     echo -e "  -m, --mode <survival|creative>  Game mode (default: survival)"
     echo -e "  -d, --difficulty <peaceful|easy|normal|hard>"
     echo -e "                                  Game difficulty (default: normal)"
-    echo -e "  -b, --no-bedrock                Skip Bedrock Edition deployment"
+    echo -e "  --bedrock                       Enable Bedrock Edition deployment"
+    echo -e "  -b, --no-bedrock                Disable Bedrock Edition deployment"
     echo -e "  -w, --world-import FILE         Import world from zip file"
     echo -e "  -k, --k8s <eks|aks>             Kubernetes provider (default: eks)" 
     echo -e "  -n, --namespace NAMESPACE       Kubernetes namespace (default: mineclifford)"
@@ -91,7 +98,13 @@ function show_help {
     echo -e "  --no-interactive                Run in non-interactive mode"
     echo -e "  --no-rollback                   Disable rollback on failure"
     echo -e "  --no-save-state                 Don't save Terraform state"
-    echo -e "  --storage-type <s3|azure|github> State storage type (default: s3)"
+    echo -e "  --storage-type <s3|azure|github> State storage type (default: github)"
+    echo -e "  --project-name NAME             Project name for resource naming/tagging (default: mineclifford)"
+    echo -e "  --environment ENV               Environment tag: production|staging|development|test (default: production)"
+    echo -e "  --owner OWNER                   Owner tag for resources (default: minecraft)"
+    echo -e "  --region REGION                 Cloud region (provider-aware, default: sa-east-1 / East US 2)"
+    echo -e "  --instance-type TYPE            VM/instance type (provider-aware)"
+    echo -e "  --disk-size GB                  Disk size in GB (default: 30)"
     echo -e "  -h, --help                      Show this help message"
     echo -e "${YELLOW}Examples:${NC}"
     echo -e "  $0 deploy --provider aws --orchestration swarm"
@@ -150,7 +163,7 @@ function handle_error {
                 ;;
             "local")
                 echo -e "${YELLOW}Stopping and removing local Docker containers...${NC}"
-                docker-compose down -v || true
+                docker compose down -v || true
                 ;;
         esac
     fi
@@ -187,9 +200,9 @@ function validate_environment {
             echo -e "${RED}Error: Required tool 'docker' is not installed.${NC}"
             handle_error "Missing required tool: docker" "pre-operation"
         fi
-        if ! command -v docker-compose &> /dev/null; then
-            echo -e "${RED}Error: Required tool 'docker-compose' is not installed.${NC}"
-            handle_error "Missing required tool: docker-compose" "pre-operation"
+        if ! docker compose version &> /dev/null; then
+            echo -e "${RED}Error: Required tool 'docker compose' (Docker Compose V2 plugin) is not installed.${NC}"
+            handle_error "Missing required tool: docker compose" "pre-operation"
         fi
     fi
     
@@ -234,6 +247,14 @@ function validate_environment {
         fi
     fi
 
+    if [[ -z "$PROJECT_NAME" ]]; then
+        handle_error "Project name cannot be empty" "pre-operation"
+    fi
+
+    if [[ ! "$ENVIRONMENT" =~ ^(production|staging|development|test)$ ]]; then
+        handle_error "Invalid environment. Must be one of: production, staging, development, test" "pre-operation"
+    fi
+
     if [[ ! "$PROVIDER" =~ ^(aws|azure)$ ]]; then
         handle_error "Invalid provider. Must be 'aws' or 'azure'" "pre-operation"
     fi
@@ -271,7 +292,7 @@ function save_terraform_state {
         fi
     fi
     
-    if ./save-terraform-state.sh --provider "$PROVIDER" --action save --storage "$STORAGE_TYPE"; then
+    if $SCRIPT_DIR/scripts/save-terraform-state.sh --provider "$PROVIDER" --action save --storage "$STORAGE_TYPE"; then
         echo -e "${GREEN}Terraform state saved successfully.${NC}"
     else
         echo -e "${YELLOW}Could not save Terraform state to remote storage. Continuing with local state.${NC}"
@@ -283,11 +304,75 @@ function save_terraform_state {
 function load_terraform_state {
     echo -e "${BLUE}Loading Terraform state...${NC}"
 
-    if ./save-terraform-state.sh --provider "$PROVIDER" --action load --storage "$STORAGE_TYPE"; then
+    if $SCRIPT_DIR/scripts/save-terraform-state.sh --provider "$PROVIDER" --action load --storage "$STORAGE_TYPE"; then
         echo -e "${GREEN}Terraform state loaded successfully.${NC}"
     else
         echo -e "${YELLOW}No remote Terraform state available (or failed to load). Using local state.${NC}"
         return 1
+    fi
+}
+
+# Export Terraform variables from script settings
+function export_terraform_vars {
+    echo -e "${YELLOW}Exporting Terraform variables...${NC}"
+
+    # Resolve instance type defaults per provider
+    local resolved_instance_type="$INSTANCE_TYPE"
+    if [[ -z "$resolved_instance_type" ]]; then
+        if [[ "$PROVIDER" == "aws" ]]; then
+            resolved_instance_type="t3.medium"
+        elif [[ "$PROVIDER" == "azure" ]]; then
+            resolved_instance_type="Standard_B2s"
+        fi
+    fi
+
+    # Apply region override to the correct provider
+    if [[ -n "$REGION_OVERRIDE" ]]; then
+        if [[ "$PROVIDER" == "aws" ]]; then
+            AWS_REGION="$REGION_OVERRIDE"
+        elif [[ "$PROVIDER" == "azure" ]]; then
+            AZURE_LOCATION="$REGION_OVERRIDE"
+        fi
+    fi
+
+    # Universal variables
+    export TF_VAR_server_names="$(printf '%s\n' "${SERVER_NAMES[@]}" | jq -R . | jq -cs .)"
+
+    # Provider-specific variables
+    if [[ "$PROVIDER" == "aws" ]]; then
+        export TF_VAR_project_name="$PROJECT_NAME"
+        export TF_VAR_region="$AWS_REGION"
+        export TF_VAR_vpc_name="${PROJECT_NAME}-vpc"
+        export TF_VAR_subnet_name="${PROJECT_NAME}-subnet"
+        export TF_VAR_instance_type="$resolved_instance_type"
+
+        if [[ "$ORCHESTRATION" == "kubernetes" ]]; then
+            export TF_VAR_cluster_name="${PROJECT_NAME}-eks"
+            export TF_VAR_node_instance_type="$resolved_instance_type"
+            export TF_VAR_node_disk_size="$DISK_SIZE_GB"
+            export TF_VAR_tags="{\"Project\":\"${PROJECT_NAME}\",\"Environment\":\"${ENVIRONMENT}\",\"ManagedBy\":\"terraform\",\"Owner\":\"${OWNER}\"}"
+        else
+            export TF_VAR_environment="$ENVIRONMENT"
+            export TF_VAR_owner="$OWNER"
+            export TF_VAR_disk_size_gb="$DISK_SIZE_GB"
+        fi
+    elif [[ "$PROVIDER" == "azure" ]]; then
+        export TF_VAR_resource_group_name="$PROJECT_NAME"
+        export TF_VAR_location="$AZURE_LOCATION"
+        export TF_VAR_vnet_name="${PROJECT_NAME}-vnet"
+        export TF_VAR_instance_type="$resolved_instance_type"
+        export TF_VAR_azure_subscription_id="${AZURE_SUBSCRIPTION_ID:-}"
+
+        if [[ "$ORCHESTRATION" == "kubernetes" ]]; then
+            export TF_VAR_prefix="$PROJECT_NAME"
+            export TF_VAR_vm_size="$resolved_instance_type"
+            export TF_VAR_os_disk_size_gb="$DISK_SIZE_GB"
+            export TF_VAR_tags="{\"Project\":\"${PROJECT_NAME}\",\"Environment\":\"${ENVIRONMENT}\",\"ManagedBy\":\"terraform\",\"Owner\":\"${OWNER}\"}"
+        else
+            export TF_VAR_environment="$ENVIRONMENT"
+            export TF_VAR_owner="$OWNER"
+            export TF_VAR_disk_size_gb="$DISK_SIZE_GB"
+        fi
     fi
 }
 
@@ -298,7 +383,7 @@ function run_terraform {
         return
     fi
 
-    SERVER_NAMES_JSON=$(printf '"%s",' "${SERVER_NAMES[@]}" | sed 's/,$//')
+    export_terraform_vars
 
     echo -e "${BLUE}Running Terraform for $PROVIDER...${NC}"
     
@@ -327,7 +412,7 @@ function run_terraform {
     terraform init || handle_error "Terraform initialization failed" "terraform"
     
     echo -e "${YELLOW}Planning Terraform changes...${NC}"
-    terraform plan -var="server_names=[${SERVER_NAMES_JSON}]" -out=tf.plan || handle_error "Terraform plan failed" "terraform"
+    terraform plan -out=tf.plan || handle_error "Terraform plan failed" "terraform"
     
     echo -e "${YELLOW}Applying Terraform changes...${NC}"
     terraform apply tf.plan || handle_error "Terraform apply failed" "terraform"
@@ -369,6 +454,26 @@ function run_terraform {
     echo ""
 }
 
+# Load or generate persistent passwords for RCON/Grafana
+function ensure_passwords {
+    local pw_file="$SCRIPT_DIR/.rcon_password"
+    if [[ -f "$pw_file" ]]; then
+        source "$pw_file"
+    fi
+    if [[ -z "${RCON_PASSWORD:-}" ]]; then
+        RCON_PASSWORD="$(openssl rand -base64 16)"
+    fi
+    if [[ -z "${GRAFANA_PASSWORD:-}" ]]; then
+        GRAFANA_PASSWORD="$(openssl rand -base64 16)"
+    fi
+    # Cache for future runs
+    cat > "$pw_file" << PWEOF
+RCON_PASSWORD="$RCON_PASSWORD"
+GRAFANA_PASSWORD="$GRAFANA_PASSWORD"
+PWEOF
+    chmod 600 "$pw_file"
+}
+
 # Run Ansible with error handling
 function run_ansible {
     echo -e "${BLUE}Running Ansible playbooks for Minecraft...${NC}"
@@ -401,12 +506,14 @@ minecraft_java_spawn_protection: 0
 minecraft_java_view_distance: 8
 minecraft_java_simulation_distance: 6
 
-# Bedrock Edition — disabled (vanilla Java only)
-minecraft_bedrock_enabled: false
+# Bedrock Edition
+minecraft_bedrock_enabled: $USE_BEDROCK
+minecraft_bedrock_gamemode: "$MINECRAFT_MODE"
+minecraft_bedrock_difficulty: "$MINECRAFT_DIFFICULTY"
 
 # Monitoring Configuration
-rcon_password: "${RCON_PASSWORD:-$(openssl rand -base64 16)}"
-grafana_password: "${GRAFANA_PASSWORD:-$(openssl rand -base64 16)}"
+rcon_password: "$RCON_PASSWORD"
+grafana_password: "$GRAFANA_PASSWORD"
 timezone: "America/Sao_Paulo"
 
 # Server Names
@@ -443,10 +550,8 @@ EOF
     echo -e "${YELLOW}Running Minecraft setup playbook...${NC}"
     if [[ "$ORCHESTRATION" == "swarm" ]]; then
         ansible-playbook -i ../../static_ip.ini swarm_setup.yml -e "@minecraft_vars.yml" ${ANSIBLE_EXTRA_VARS:+-e "$ANSIBLE_EXTRA_VARS"} || handle_error "Ansible playbook execution failed" "ansible"
-    fi #
-    #     ansible-playbook -i ../../static_ip.ini minecraft_setup.yml -e "@minecraft_vars.yml" ${ANSIBLE_EXTRA_VARS:+-e "$ANSIBLE_EXTRA_VARS"} || handle_error "Ansible playbook execution failed" "ansible"
-    # fi
-    
+    fi
+
     cd ../..
     
     # Final connectivity verification
@@ -480,13 +585,15 @@ function import_world {
     # Based on orchestration type, copy the world
     case "$ORCHESTRATION" in
         local)
-            # Set up for local import during docker-compose
+            # Set up for local import during docker compose
             export MINECRAFT_WORLD_DIR="$IMPORT_DIR"
             ;;
         swarm|kubernetes)
             # Create a special tarball for later use
             tar -czf "world_imports/world_import_$TIMESTAMP.tar.gz" -C "$IMPORT_DIR" .
-            export MINECRAFT_WORLD_IMPORT="world_imports/world_import_$TIMESTAMP.tar.gz"
+            export MINECRAFT_WORLD_IMPORT_TAR="$(realpath "world_imports/world_import_$TIMESTAMP.tar.gz")"
+            export MINECRAFT_WORLD_IMPORT_DIR="$(realpath "$IMPORT_DIR")"
+            export MINECRAFT_WORLD_IMPORT_READY="true"
             ;;
     esac
 
@@ -634,24 +741,56 @@ spec:
 EOF
     fi
     
-    # Update deployments based on provider
+    # Generate ConfigMap with game settings from script variables
+    echo -e "${YELLOW}Generating Kubernetes ConfigMaps from script variables...${NC}"
+    kubectl create configmap minecraft-config -n $NAMESPACE \
+        --from-literal=EULA=TRUE \
+        --from-literal=VERSION="$MINECRAFT_VERSION" \
+        --from-literal=TYPE=VANILLA \
+        --from-literal=MEMORY="$MEMORY" \
+        --from-literal=DIFFICULTY="$MINECRAFT_DIFFICULTY" \
+        --from-literal=MODE="$MINECRAFT_MODE" \
+        --from-literal=MOTD="${PROJECT_NAME} Java Server" \
+        --from-literal=MAX_PLAYERS=15 \
+        --from-literal=ONLINE_MODE=FALSE \
+        --from-literal=ENABLE_RCON=true \
+        --from-literal=RCON_PASSWORD="${RCON_PASSWORD:-minecraft}" \
+        --from-literal=ALLOW_NETHER=true \
+        --from-literal=ENABLE_COMMAND_BLOCK=false \
+        --from-literal=SPAWN_PROTECTION=0 \
+        --from-literal=VIEW_DISTANCE=8 \
+        --from-literal=TZ=America/Sao_Paulo \
+        --dry-run=client -o yaml | kubectl apply -f - || handle_error "Failed to create minecraft-config ConfigMap" "kubernetes"
+
+    if [[ "$USE_BEDROCK" == "true" ]]; then
+        kubectl create configmap minecraft-bedrock-config -n $NAMESPACE \
+            --from-literal=EULA=TRUE \
+            --from-literal=GAMEMODE="$MINECRAFT_MODE" \
+            --from-literal=DIFFICULTY="$MINECRAFT_DIFFICULTY" \
+            --from-literal=SERVER_NAME="${PROJECT_NAME} Bedrock Server" \
+            --from-literal=LEVEL_NAME="$PROJECT_NAME" \
+            --from-literal=ALLOW_CHEATS=false \
+            --from-literal=TZ=America/Sao_Paulo \
+            --dry-run=client -o yaml | kubectl apply -f - || handle_error "Failed to create minecraft-bedrock-config ConfigMap" "kubernetes"
+    fi
+
+    # Apply base manifests
+    echo -e "${YELLOW}Applying Kubernetes deployments...${NC}"
+    kubectl apply -f deployment/kubernetes/base/volume-claims.yaml -n $NAMESPACE || handle_error "Failed to apply volume claims" "kubernetes"
+    kubectl apply -f deployment/kubernetes/base/minecraft-java-deployment.yaml -n $NAMESPACE || handle_error "Failed to deploy Minecraft Java" "kubernetes"
+
+    if [[ "$USE_BEDROCK" == "true" ]]; then
+        kubectl apply -f deployment/kubernetes/base/minecraft-bedrock-deployment.yaml -n $NAMESPACE || handle_error "Failed to deploy Minecraft Bedrock" "kubernetes"
+    fi
+
+    # Apply provider-specific patches
     if [[ "$PROVIDER" == "aws" ]]; then
-        echo -e "${YELLOW}Applying AWS-specific Kubernetes deployments...${NC}"
-        kubectl apply -k deployment/kubernetes/aws/ -n $NAMESPACE || handle_error "Failed to apply AWS Kubernetes manifests" "kubernetes"
+        echo -e "${YELLOW}Applying AWS-specific patches...${NC}"
+        kubectl apply -f deployment/kubernetes/aws/patches/storage-aws.yaml -n $NAMESPACE 2>/dev/null || true
+        kubectl apply -f deployment/kubernetes/aws/patches/services-aws.yaml -n $NAMESPACE 2>/dev/null || true
     elif [[ "$PROVIDER" == "azure" ]]; then
-        echo -e "${YELLOW}Applying Azure-specific Kubernetes deployments...${NC}"
-        kubectl apply -k deployment/kubernetes/azure/ -n $NAMESPACE || handle_error "Failed to apply Azure Kubernetes manifests" "kubernetes"
-    else
-        # Default to applying base configurations
-        echo -e "${YELLOW}Applying base Kubernetes deployments...${NC}"
-        kubectl apply -f deployment/kubernetes/base/minecraft-java-deployment.yaml -n $NAMESPACE || handle_error "Failed to deploy Minecraft Java" "kubernetes"
-        
-        if [[ "$USE_BEDROCK" == "true" ]]; then
-            kubectl apply -f deployment/kubernetes/base/minecraft-bedrock-deployment.yaml -n $NAMESPACE || handle_error "Failed to deploy Minecraft Bedrock" "kubernetes"
-        fi
-        
-        kubectl apply -f deployment/kubernetes/monitoring.yaml -n $NAMESPACE || handle_error "Failed to deploy monitoring" "kubernetes"
-        kubectl apply -f deployment/kubernetes/ingress.yaml -n $NAMESPACE || handle_error "Failed to deploy ingress" "kubernetes"
+        echo -e "${YELLOW}Applying Azure-specific patches...${NC}"
+        kubectl apply -f deployment/kubernetes/azure/patches/services-azure.yaml -n $NAMESPACE 2>/dev/null || true
     fi
     
     # Apply the patch for world import if needed
@@ -670,14 +809,6 @@ EOF
         kubectl rollout status deployment/minecraft-bedrock -n $NAMESPACE --timeout=300s || echo -e "${YELLOW}Minecraft Bedrock deployment still in progress...${NC}"
     fi
 
-    # Apply the patch for world import if needed
-    if [[ "$MINECRAFT_WORLD_IMPORT_READY" == "true" && -f "$MINECRAFT_WORLD_IMPORT_TAR" ]]; then
-        kubectl patch deployment minecraft-java -n $NAMESPACE --patch "$(cat /tmp/minecraft-java-patch.yaml)" || handle_error "Failed to patch deployment for world import" "kubernetes"
-        
-        # Delete the temporary pod once the deployment is updated
-        kubectl delete pod import-data-receiver -n $NAMESPACE
-    fi
-    
     # Get service information for connecting
     echo -e "${YELLOW}Getting service information...${NC}"
     kubectl get services -n $NAMESPACE
@@ -696,7 +827,7 @@ function deploy_local {
     # mkdir -p data/prometheus
     # mkdir -p data/grafana
     
-    # Create a docker-compose file with our parameters
+    # Create a docker compose file with our parameters
     echo -e "${YELLOW}Creating docker-compose.yml with:${NC}"
     echo -e "  Version: ${YELLOW}$MINECRAFT_VERSION${NC}"
     echo -e "  Game Mode: ${YELLOW}$MINECRAFT_MODE${NC}"
@@ -711,10 +842,11 @@ version: '3.8'
 services:
   # Java Edition Minecraft Server
   minecraft-java:
-    image: itzg/minecraft-server:$MINECRAFT_VERSION
+    image: itzg/minecraft-server:latest
     container_name: minecraft-java
     environment:
       - EULA=TRUE
+      - VERSION=$MINECRAFT_VERSION
       - TYPE=VANILLA
       - MEMORY=$MEMORY
       - DIFFICULTY=$MINECRAFT_DIFFICULTY
@@ -769,7 +901,7 @@ EOF
 
   # Bedrock Edition Minecraft Server
   minecraft-bedrock:
-    image: itzg/minecraft-bedrock-server:$MINECRAFT_VERSION
+    image: itzg/minecraft-bedrock-server:latest
     container_name: minecraft-bedrock
     environment:
       - EULA=TRUE
@@ -873,12 +1005,12 @@ EOF
     
     # Start the services
     echo -e "${YELLOW}Starting Minecraft servers...${NC}"
-    docker-compose up -d || handle_error "Failed to start Docker containers" "local"
+    docker compose up -d || handle_error "Failed to start Docker containers" "local"
     
     # Check status
     echo -e "${YELLOW}Checking if services are running...${NC}"
     sleep 10
-    docker-compose ps || handle_error "Failed to check Docker container status" "local"
+    docker compose ps || handle_error "Failed to check Docker container status" "local"
     
     echo -e "${GREEN}Local deployment completed successfully.${NC}"
     echo -e "${YELLOW}Access Minecraft Java server at: localhost:25565${NC}"
@@ -1037,7 +1169,7 @@ function restore_worlds {
         # Restore local volumes
         if [[ -f "$BACKUP_DIR/$selected_backup/minecraft_java_$selected_backup.tar.gz" ]]; then
             echo -e "${YELLOW}Stopping Docker containers...${NC}"
-            docker-compose down
+            docker compose down
             
             echo -e "${YELLOW}Restoring Minecraft Java world...${NC}"
             rm -rf data/minecraft-java/*
@@ -1050,12 +1182,12 @@ function restore_worlds {
             fi
             
             echo -e "${YELLOW}Starting Docker containers...${NC}"
-            docker-compose up -d
+            docker compose up -d
         else
             # Older backup format
             if [[ -f "$BACKUP_DIR/minecraft_java_$selected_backup.tar.gz" ]]; then
                 echo -e "${YELLOW}Stopping Docker containers...${NC}"
-                docker-compose down
+                docker compose down
                 
                 echo -e "${YELLOW}Restoring Minecraft Java world...${NC}"
                 rm -rf data/minecraft-java/*
@@ -1068,7 +1200,7 @@ function restore_worlds {
                 fi
                 
                 echo -e "${YELLOW}Starting Docker containers...${NC}"
-                docker-compose up -d
+                docker compose up -d
             else
                 handle_error "Backup files not found in selected backup" "restore"
             fi
@@ -1451,7 +1583,7 @@ function destroy_infrastructure {
     if [[ "$ORCHESTRATION" == "local" ]]; then
         # Destroy local Docker containers
         echo -e "${YELLOW}Stopping and removing Docker containers...${NC}"
-        docker-compose down -v || handle_error "Failed to stop Docker containers" "destroy"
+        docker compose down -v || handle_error "Failed to stop Docker containers" "destroy"
         
         # Remove data directories if forced
         if [[ "$FORCE_CLEANUP" == "true" ]]; then
@@ -1496,7 +1628,7 @@ function destroy_infrastructure {
         
         # Run the verify-destruction.sh script
         echo -e "${YELLOW}Verifying destruction...${NC}"
-        ./verify-destruction.sh --provider $PROVIDER ${FORCE_CLEANUP:+--force} || handle_error "Failed to verify destruction" "destroy"
+        $SCRIPT_DIR/scripts/verify-destruction.sh --provider $PROVIDER ${FORCE_CLEANUP:+--force} || handle_error "Failed to verify destruction" "destroy"
     fi
     
     echo -e "${GREEN}Infrastructure destroyed successfully.${NC}"
@@ -1510,6 +1642,9 @@ function deploy_infrastructure {
     echo -e "${BLUE}Starting Minecraft deployment with the following configuration:${NC}"
     echo -e "Provider: ${BLUE}$PROVIDER${NC}"
     echo -e "Orchestration: ${BLUE}$ORCHESTRATION${NC}"
+
+    # Ensure RCON/Grafana passwords are loaded or generated
+    ensure_passwords
 
     # In the deploy_infrastructure function
     if [[ "$PROVIDER" == "aws" ]]; then
@@ -1529,7 +1664,7 @@ function deploy_infrastructure {
         echo -e "${YELLOW}Deploying with a single node. Configuring single-node swarm.${NC}"
         SINGLE_NODE_SWARM=true
     else
-        echo -e "${YELLOW}Deploying with a single node. Configuring single-node swarm.${NC}"
+        echo -e "${YELLOW}Deploying with multiple nodes. Configuring multi-node swarm.${NC}"
         SINGLE_NODE_SWARM=false
     fi
 
@@ -1616,6 +1751,10 @@ while [[ $# -gt 0 ]]; do
             MINECRAFT_DIFFICULTY="$2"
             shift 2
             ;;
+        --bedrock|--use-bedrock)
+            USE_BEDROCK=true
+            shift
+            ;;
         -b|--no-bedrock)
             USE_BEDROCK=false
             shift
@@ -1658,6 +1797,30 @@ while [[ $# -gt 0 ]]; do
             ;;
         --storage-type)
             STORAGE_TYPE="$2"
+            shift 2
+            ;;
+        --project-name)
+            PROJECT_NAME="$2"
+            shift 2
+            ;;
+        --environment)
+            ENVIRONMENT="$2"
+            shift 2
+            ;;
+        --owner)
+            OWNER="$2"
+            shift 2
+            ;;
+        --region)
+            REGION_OVERRIDE="$2"
+            shift 2
+            ;;
+        --instance-type)
+            INSTANCE_TYPE="$2"
+            shift 2
+            ;;
+        --disk-size)
+            DISK_SIZE_GB="$2"
             shift 2
             ;;
         -h|--help)

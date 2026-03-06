@@ -19,29 +19,9 @@ spec:
       containers:
       - name: minecraft-java
         image: itzg/minecraft-server:latest
-        env:
-        - name: EULA
-          value: "TRUE"
-        - name: TYPE
-          value: "PAPER"
-        - name: MEMORY
-          value: "2G"
-        - name: DIFFICULTY
-          value: "normal"
-        - name: MODE
-          value: "survival"
-        - name: MOTD
-          value: "Mineclifford Java Server"
-        - name: ALLOW_NETHER
-          value: "true"
-        - name: ENABLE_COMMAND_BLOCK
-          value: "true"
-        - name: SPAWN_PROTECTION
-          value: "0"
-        - name: VIEW_DISTANCE
-          value: "10"
-        - name: TZ
-          value: "America/Sao_Paulo"
+        envFrom:
+        - configMapRef:
+            name: minecraft-config
         ports:
         - containerPort: 25565
         resources:
@@ -71,15 +51,3 @@ spec:
     targetPort: 25565
     protocol: TCP
   type: LoadBalancer
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: minecraft-java-pvc
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 10Gi
-  storageClassName: standard

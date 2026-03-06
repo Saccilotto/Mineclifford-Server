@@ -1,0 +1,23 @@
+{{- if .Values.javaEdition.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "minecraft.fullname" . }}-java
+  labels:
+    {{- include "minecraft.labels" . | nindent 4 }}
+    app.kubernetes.io/component: java
+  {{- with .Values.javaEdition.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.javaEdition.service.type }}
+  selector:
+    {{- include "minecraft.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: java
+  ports:
+  - port: {{ .Values.javaEdition.service.port }}
+    targetPort: 25565
+    protocol: TCP
+    name: minecraft-java
+{{- end }}

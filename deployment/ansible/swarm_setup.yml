@@ -2,7 +2,7 @@
   hosts: all
   become: yes
   vars:
-    manager_node: "{{ groups['instance1'][0] }}"
+    manager_node: "{{ groups[server_names[0]][0] | default(groups['all'][0]) }}"
     ansible_python_interpreter: /usr/bin/python3
     minecraft_java_version: "latest"
     minecraft_java_memory: "2G"
@@ -137,8 +137,8 @@
     
   - name: Share token with workers
     set_fact:
-      worker_token: "{{ hostvars[groups['instance1'][0]].worker_token }}"
-    when: inventory_hostname != manager_node and not single_node_swarm and hostvars[groups['instance1'][0]].worker_token is defined
+      worker_token: "{{ hostvars[manager_node].worker_token }}"
+    when: inventory_hostname != manager_node and not single_node_swarm and hostvars[manager_node].worker_token is defined
     
   - name: Join workers to swarm
     community.docker.docker_swarm:
@@ -157,13 +157,6 @@
       force: yes
     when: single_node_swarm and (swarm_info.failed or not swarm_info.docker_swarm_active)
     ignore_errors: yes
-
-  # Get manager node IP
-  - name: Get manager node IP
-    set_fact:
-      manager_ip_result: "{{ ansible_facts['default_ipv4']['address'] }}"
-    delegate_to: "{{ manager_node }}"
-    run_once: true
 
   - name: Import Minecraft world if provided
     block:

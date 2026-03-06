@@ -1,0 +1,20 @@
+{{- if .Values.bedrockEdition.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "minecraft.fullname" . }}-bedrock-config
+  labels:
+    {{- include "minecraft.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bedrock
+data:
+  EULA: "TRUE"
+  GAMEMODE: {{ .Values.bedrockEdition.server.gameMode | quote }}
+  DIFFICULTY: {{ .Values.bedrockEdition.server.difficulty | quote }}
+  SERVER_NAME: {{ .Values.bedrockEdition.server.serverName | quote }}
+  LEVEL_NAME: {{ .Values.bedrockEdition.server.levelName | quote }}
+  ALLOW_CHEATS: {{ .Values.bedrockEdition.server.allowCheats | quote }}
+  MAX_PLAYERS: {{ .Values.bedrockEdition.server.maxPlayers | quote }}
+  VIEW_DISTANCE: {{ .Values.bedrockEdition.server.viewDistance | quote }}
+  DEFAULT_PLAYER_PERMISSION_LEVEL: {{ .Values.bedrockEdition.server.defaultPlayerPermissionLevel | quote }}
+  TZ: {{ .Values.timezone | quote }}
+{{- end }}

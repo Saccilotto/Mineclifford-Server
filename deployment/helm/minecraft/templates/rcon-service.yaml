@@ -1,0 +1,19 @@
+{{- if .Values.rcon.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "minecraft.fullname" . }}-rcon
+  labels:
+    {{- include "minecraft.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rcon
+spec:
+  type: {{ .Values.rcon.service.type }}
+  selector:
+    {{- include "minecraft.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: rcon
+  ports:
+  - port: {{ .Values.rcon.service.port }}
+    targetPort: {{ .Values.rcon.webPort }}
+    protocol: TCP
+    name: web
+{{- end }}

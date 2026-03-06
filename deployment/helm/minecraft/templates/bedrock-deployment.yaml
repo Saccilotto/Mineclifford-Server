@@ -1,0 +1,46 @@
+{{- if .Values.bedrockEdition.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "minecraft.fullname" . }}-bedrock
+  labels:
+    {{- include "minecraft.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bedrock
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "minecraft.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: bedrock
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        {{- include "minecraft.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: bedrock
+    spec:
+      containers:
+      - name: minecraft-bedrock
+        image: "{{ .Values.bedrockEdition.image.repository }}:{{ .Values.bedrockEdition.image.tag }}"
+        imagePullPolicy: {{ .Values.bedrockEdition.image.pullPolicy }}
+        envFrom:
+        - configMapRef:
+            name: {{ include "minecraft.fullname" . }}-bedrock-config
+        ports:
+        - containerPort: 19132
+          protocol: UDP
+        resources:
+          {{- toYaml .Values.bedrockEdition.resources | nindent 10 }}
+        volumeMounts:
+        - name: minecraft-bedrock-data
+          mountPath: /data
+      volumes:
+      - name: minecraft-bedrock-data
+        {{- if .Values.bedrockEdition.persistence.enabled }}
+        persistentVolumeClaim:
+          claimName: {{ include "minecraft.fullname" . }}-bedrock-pvc
+        {{- else }}
+        emptyDir: {}
+        {{- end }}
+{{- end }}

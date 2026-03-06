@@ -93,7 +93,6 @@ resource "cloudflare_zone_settings_override" "main" {
     early_hints          = "on"
     http2                = "on"
     http3                = "on"
-    min_tls_version      = "1.2"
     minify {
       css  = "on"
       js   = "on"

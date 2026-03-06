@@ -148,12 +148,33 @@ Use the web interface to:
 # Deploy to Azure with Kubernetes
 ./minecraft-ops.sh deploy --provider azure --orchestration kubernetes
 
+# Custom project name, environment, and region
+./minecraft-ops.sh deploy --provider aws --orchestration kubernetes \
+  --project-name myserver --environment staging --region us-west-2
+
+# Custom instance type and disk size
+./minecraft-ops.sh deploy --provider aws --orchestration swarm \
+  --instance-type t3.large --disk-size 50
+
 # Check status
 ./minecraft-ops.sh status --provider aws
 
 # Destroy infrastructure
 ./minecraft-ops.sh destroy --provider aws
 ```
+
+#### Infrastructure Flags
+
+| Flag | Description | Default |
+| ---- | ----------- | ------- |
+| `--project-name NAME` | Project name for resource naming and tagging | `mineclifford` |
+| `--environment ENV` | Environment tag (`production`, `staging`, `development`, `test`) | `production` |
+| `--owner OWNER` | Owner tag for resources | `minecraft` |
+| `--region REGION` | Cloud region (provider-aware) | `sa-east-1` (AWS) / `East US 2` (Azure) |
+| `--instance-type TYPE` | VM/instance type (provider-aware) | `t3.medium` (AWS) / `Standard_B2s` (Azure) |
+| `--disk-size GB` | Disk size in GB | `30` |
+
+These flags are exported as `TF_VAR_*` environment variables and flow directly into Terraform, ensuring all resources (tags, names, sizing) match your CLI input.
 
 ## Configuration
 
@@ -195,41 +216,25 @@ Optional Prometheus and Grafana stack for server metrics:
 
 Access Grafana at `http://server-ip:3000` (default: admin/admin)
 
-## Production Deployment
+## Deploying to the Cloud
 
-Deploy with Traefik reverse proxy, SSL, and BasicAuth protection:
+See [docs/CLOUD-DEPLOYMENT.md](docs/CLOUD-DEPLOYMENT.md) for the full cloud deployment guide.
 
-```bash
-# 1. Setup Cloudflare DNS
-cd terraform/cloudflare
-terraform apply -var="platform_ip=YOUR_SERVER_IP"
+## Web Dashboard and Production Deployment (On Standby)
 
-# 2. Generate BasicAuth password
-./scripts/generate-basicauth.sh admin YourPassword
+A browser-based management interface exists at `src/web/` (FastAPI + vanilla JS). It supports real-time console streaming, server creation, and deployment progress tracking. The production deployment stack (Traefik reverse proxy, Let's Encrypt SSL, BasicAuth, Cloudflare DNS) is also part of this web interface layer.
 
-# 3. Configure .env with credentials
-
-# 4. Deploy platform
-docker compose -f docker-compose.traefik.yml up -d
-```
-
-Access at `https://yourdomain.com` with BasicAuth credentials.
-
-See [docs/DEPLOYMENT-TRAEFIK.md](docs/DEPLOYMENT-TRAEFIK.md) for details.
-
-## Testing Cloud Deployment
-
-Test the complete cloud deployment workflow locally:
+Both the dashboard and the production Traefik deployment have **not been actively tested** against recent infrastructure changes and are considered on standby. The CLI (`minecraft-ops.sh`) is the primary and tested deployment interface.
 
 ```bash
-# Start dashboard
+# Run the dashboard locally (not tested with latest infra changes)
 docker compose -f docker-compose.web.yml up -d
+# Access at http://localhost
 
-# Open http://localhost and create a cloud server
-# Watch real-time Terraform and Ansible progress
+# Production with SSL (on standby — not tested with latest changes)
+# docker compose -f docker-compose.traefik.yml up -d
+# Access at https://yourdomain.com
 ```
-
-See [docs/TESTING-CLOUD-DEPLOYMENT.md](docs/TESTING-CLOUD-DEPLOYMENT.md) for detailed testing guide.
 
 ## Project Structure
 
@@ -245,10 +250,11 @@ mineclifford/
 
 ## Documentation
 
-- [Web Dashboard README](src/web/README.md) - Dashboard architecture and API
-- [Cloudflare DNS Setup](terraform/cloudflare/README.md) - DNS management
-- [Traefik Deployment](docs/DEPLOYMENT-TRAEFIK.md) - Production deployment guide
-- [Testing Guide](docs/TESTING-CLOUD-DEPLOYMENT.md) - Cloud deployment testing
+- [CLI Reference](docs/CLI-REFERENCE.md) - Full `minecraft-ops.sh` usage, flags, and variable flow
+- [Architecture](docs/ARCHITECTURE.md) - System overview, component status, and directory structure
+- [Cloud Deployment](docs/CLOUD-DEPLOYMENT.md) - Step-by-step cloud deployment guide
+- [Web Dashboard](src/web/README.md) - Dashboard architecture and API (on standby)
+- [Cloudflare DNS](terraform/cloudflare/README.md) - DNS and SSL management
 
 ## Contributing
 

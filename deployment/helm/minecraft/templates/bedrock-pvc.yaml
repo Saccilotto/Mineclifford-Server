@@ -1,0 +1,19 @@
+{{- if and .Values.bedrockEdition.enabled .Values.bedrockEdition.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "minecraft.fullname" . }}-bedrock-pvc
+  labels:
+    {{- include "minecraft.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bedrock
+    edition: bedrock
+spec:
+  accessModes:
+    - {{ .Values.bedrockEdition.persistence.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.bedrockEdition.persistence.size }}
+  {{- if .Values.bedrockEdition.persistence.storageClass }}
+  storageClassName: {{ .Values.bedrockEdition.persistence.storageClass | quote }}
+  {{- end }}
+{{- end }}

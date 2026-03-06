@@ -44,45 +44,25 @@ function show_help {
 
 # Required secrets for different providers
 AWS_REQUIRED_SECRETS=(
-    "POSTGRES_USER"
-    "POSTGRES_PASSWORD"
-    "POSTGRES_DB"
-    "PGADMIN_DEFAULT_EMAIL"
-    "PGADMIN_DEFAULT_PASSWORD"
-    "PGADMIN_LISTEN_PORT"
     "DOMAIN_NAME"
     "ACME_EMAIL"
-    "DUCKDNS_TOKEN"
-    "DUCKDNS_SUBDOMAIN"
     "TRAEFIK_DASHBOARD_USER"
     "TRAEFIK_DASHBOARD_PASSWORD_HASH"
-    "PRIMARY_HOST"
-    "REPLICA_HOST"
+    "RCON_PASSWORD"
     "BACKEND_PORT"
     "FRONTEND_PORT"
-    "NEXT_PUBLIC_API_URL"
     "TZ"
 )
 
 AZURE_REQUIRED_SECRETS=(
     "AZURE_SUBSCRIPTION_ID"
-    "POSTGRES_USER"
-    "POSTGRES_PASSWORD"
-    "POSTGRES_DB"
-    "PGADMIN_DEFAULT_EMAIL"
-    "PGADMIN_DEFAULT_PASSWORD"
-    "PGADMIN_LISTEN_PORT"
     "DOMAIN_NAME"
     "ACME_EMAIL"
-    "DUCKDNS_TOKEN"
-    "DUCKDNS_SUBDOMAIN"
     "TRAEFIK_DASHBOARD_USER"
     "TRAEFIK_DASHBOARD_PASSWORD_HASH"
-    "PRIMARY_HOST"
-    "REPLICA_HOST"
+    "RCON_PASSWORD"
     "BACKEND_PORT"
     "FRONTEND_PORT"
-    "NEXT_PUBLIC_API_URL"
     "TZ"
 )
 
@@ -160,9 +140,9 @@ TRAEFIK_DASHBOARD_USER=admin
 TRAEFIK_DASHBOARD_PASSWORD_HASH=$$apr1$$uyBtMQYo$$TMK6XINUQz.mLxjdJsl1j.
 
 # Application Configuration
-DOMAIN_NAME=cpplanta.duckdns.com
+DOMAIN_NAME=your-domain.example.com
 ACME_EMAIL=your_email@example.com
-NEXT_PUBLIC_API_URL=https://api.cpplanta.duckdns.org
+NEXT_PUBLIC_API_URL=https://api.your-domain.example.com
 BACKEND_PORT=3000
 FRONTEND_PORT=3001
 
@@ -174,7 +154,7 @@ TRAEFIK_DASHBOARD_PORT=8080
 
 # DuckDNS Configuration
 DUCKDNS_TOKEN=your_duckdns_token
-DUCKDNS_SUBDOMAIN=cpplanta
+DUCKDNS_SUBDOMAIN=your_subdomain
 
 # Regional Configuration
 TZ=America/Sao_Paulo
@@ -208,7 +188,7 @@ function encrypt_secrets {
     fi
 
     # Encrypt the file
-    openssl enc -aes-256-cbc -salt -in "$SECRETS_FILE" -out "$SECRETS_ENCRYPTED_FILE" -pass pass:"$PASSWORD"
+    openssl enc -aes-256-cbc -salt -pbkdf2 -in "$SECRETS_FILE" -out "$SECRETS_ENCRYPTED_FILE" -pass pass:"$PASSWORD"
     
     if [[ $? -eq 0 ]]; then
         echo -e "${GREEN}Secrets file encrypted successfully to $SECRETS_ENCRYPTED_FILE${NC}"
@@ -232,7 +212,7 @@ function decrypt_secrets {
     fi
 
     # Decrypt the file
-    openssl enc -aes-256-cbc -d -in "$SECRETS_ENCRYPTED_FILE" -out "$SECRETS_FILE" -pass pass:"$PASSWORD"
+    openssl enc -aes-256-cbc -d -pbkdf2 -in "$SECRETS_ENCRYPTED_FILE" -out "$SECRETS_FILE" -pass pass:"$PASSWORD"
     
     if [[ $? -eq 0 ]]; then
         echo -e "${GREEN}Secrets file decrypted successfully to $SECRETS_FILE${NC}"

@@ -2,7 +2,7 @@
 # Minecraft Configuration Variables
 minecraft_java_version: "1.21.11"
 minecraft_java_type: "VANILLA"
-minecraft_java_memory: "3G"
+minecraft_java_memory: "2G"
 minecraft_java_max_players: 15
 minecraft_java_online_mode: "FALSE"
 minecraft_java_gamemode: "survival"
@@ -17,9 +17,11 @@ minecraft_java_simulation_distance: 6
 # Bedrock Edition — disabled (vanilla Java only)
 minecraft_bedrock_enabled: false
 
-# Monitoring Configuration (passwords in minecraft_secrets.yml — gitignored)
-rcon_password: ""
-grafana_password: ""
+# Monitoring Configuration
+# Override these in minecraft_secrets.yml (gitignored) with secure values.
+# If left commented out, the playbook defaults will be used.
+# rcon_password: "set-in-secrets"
+# grafana_password: "set-in-secrets"
 timezone: "America/Sao_Paulo"
 
 # Server Names
