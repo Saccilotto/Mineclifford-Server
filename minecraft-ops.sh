@@ -40,6 +40,12 @@ INSTANCE_TYPE=""                # auto-set per provider if empty
 DISK_SIZE_GB=30
 REGION_OVERRIDE=""
 
+# Mod support
+SERVER_TYPE="VANILLA"             # VANILLA, FORGE, FABRIC, NEOFORGE, PAPER
+MODRINTH_PROJECTS=""              # Comma-separated Modrinth project slugs (e.g. "create-fabric,fabric-api")
+MODRINTH_DOWNLOAD_DEPS="required" # none, required, optional
+MOD_LOADER_VERSION=""             # Specific loader version (empty = latest)
+
 # Create log file
 touch $DEPLOYMENT_LOG
 exec > >(tee -a $DEPLOYMENT_LOG)
@@ -105,6 +111,13 @@ function show_help {
     echo -e "  --region REGION                 Cloud region (provider-aware, default: sa-east-1 / East US 2)"
     echo -e "  --instance-type TYPE            VM/instance type (provider-aware)"
     echo -e "  --disk-size GB                  Disk size in GB (default: 30)"
+    echo -e ""
+    echo -e "${YELLOW}Mod Support:${NC}"
+    echo -e "  --server-type TYPE              Server type: VANILLA|FORGE|FABRIC|NEOFORGE|PAPER (default: VANILLA)"
+    echo -e "  --mods PROJECTS                 Comma-separated Modrinth project slugs (e.g. create-fabric,fabric-api)"
+    echo -e "  --mod-deps <none|required|optional>"
+    echo -e "                                  Auto-download mod dependencies (default: required)"
+    echo -e "  --mod-loader-version VERSION    Specific mod loader version (default: latest)"
     echo -e "  -h, --help                      Show this help message"
     echo -e "${YELLOW}Examples:${NC}"
     echo -e "  $0 deploy --provider aws --orchestration swarm"
@@ -112,6 +125,10 @@ function show_help {
     echo -e "  $0 destroy --provider aws --orchestration swarm --force"
     echo -e "  $0 deploy --orchestration local --minecraft-version 1.19"
     echo -e "  $0 backup --provider aws --orchestration swarm"
+    echo -e ""
+    echo -e "${YELLOW}Mod Examples:${NC}"
+    echo -e "  $0 deploy --orchestration local --server-type FABRIC --mods 'create-fabric,fabric-api' --minecraft-version 1.20.1"
+    echo -e "  $0 deploy --provider aws --orchestration swarm --server-type FORGE --mods 'create' --minecraft-version 1.20.1"
     exit 0
 }
 
@@ -493,7 +510,7 @@ function run_ansible {
 ---
 # Minecraft Configuration Variables
 minecraft_java_version: "$MINECRAFT_VERSION"
-minecraft_java_type: "VANILLA"
+minecraft_java_type: "$SERVER_TYPE"
 minecraft_java_memory: "$MEMORY"
 minecraft_java_max_players: 15
 minecraft_java_online_mode: "FALSE"
@@ -510,6 +527,11 @@ minecraft_java_simulation_distance: 6
 minecraft_bedrock_enabled: $USE_BEDROCK
 minecraft_bedrock_gamemode: "$MINECRAFT_MODE"
 minecraft_bedrock_difficulty: "$MINECRAFT_DIFFICULTY"
+
+# Mod Support
+minecraft_modrinth_projects: "$MODRINTH_PROJECTS"
+minecraft_modrinth_download_deps: "$MODRINTH_DOWNLOAD_DEPS"
+minecraft_mod_loader_version: "$MOD_LOADER_VERSION"
 
 # Monitoring Configuration
 rcon_password: "$RCON_PASSWORD"
@@ -743,10 +765,25 @@ EOF
     
     # Generate ConfigMap with game settings from script variables
     echo -e "${YELLOW}Generating Kubernetes ConfigMaps from script variables...${NC}"
+
+    # Build mod-related ConfigMap literals
+    local mod_literals=""
+    if [[ -n "$MODRINTH_PROJECTS" ]]; then
+        mod_literals="$mod_literals --from-literal=MODRINTH_PROJECTS=$MODRINTH_PROJECTS"
+        mod_literals="$mod_literals --from-literal=MODRINTH_DOWNLOAD_DEPENDENCIES=$MODRINTH_DOWNLOAD_DEPS"
+    fi
+    if [[ -n "$MOD_LOADER_VERSION" ]]; then
+        case "$SERVER_TYPE" in
+            FABRIC)  mod_literals="$mod_literals --from-literal=FABRIC_LOADER_VERSION=$MOD_LOADER_VERSION" ;;
+            FORGE)   mod_literals="$mod_literals --from-literal=FORGE_VERSION=$MOD_LOADER_VERSION" ;;
+            NEOFORGE) mod_literals="$mod_literals --from-literal=NEOFORGE_VERSION=$MOD_LOADER_VERSION" ;;
+        esac
+    fi
+
     kubectl create configmap minecraft-config -n $NAMESPACE \
         --from-literal=EULA=TRUE \
         --from-literal=VERSION="$MINECRAFT_VERSION" \
-        --from-literal=TYPE=VANILLA \
+        --from-literal=TYPE="$SERVER_TYPE" \
         --from-literal=MEMORY="$MEMORY" \
         --from-literal=DIFFICULTY="$MINECRAFT_DIFFICULTY" \
         --from-literal=MODE="$MINECRAFT_MODE" \
@@ -760,6 +797,7 @@ EOF
         --from-literal=SPAWN_PROTECTION=0 \
         --from-literal=VIEW_DISTANCE=8 \
         --from-literal=TZ=America/Sao_Paulo \
+        $mod_literals \
         --dry-run=client -o yaml | kubectl apply -f - || handle_error "Failed to create minecraft-config ConfigMap" "kubernetes"
 
     if [[ "$USE_BEDROCK" == "true" ]]; then
@@ -830,10 +868,14 @@ function deploy_local {
     # Create a docker compose file with our parameters
     echo -e "${YELLOW}Creating docker-compose.yml with:${NC}"
     echo -e "  Version: ${YELLOW}$MINECRAFT_VERSION${NC}"
+    echo -e "  Server Type: ${YELLOW}$SERVER_TYPE${NC}"
     echo -e "  Game Mode: ${YELLOW}$MINECRAFT_MODE${NC}"
     echo -e "  Difficulty: ${YELLOW}$MINECRAFT_DIFFICULTY${NC}"
     echo -e "  Memory: ${YELLOW}$MEMORY${NC}"
     echo -e "  Bedrock Edition: ${YELLOW}$([[ "$USE_BEDROCK" == "true" ]] && echo "Enabled" || echo "Disabled")${NC}"
+    if [[ -n "$MODRINTH_PROJECTS" ]]; then
+        echo -e "  Mods (Modrinth): ${YELLOW}$MODRINTH_PROJECTS${NC}"
+    fi
     
 # Create the docker-compose.yml file
     cat > docker-compose.yml << EOF
@@ -847,7 +889,7 @@ services:
     environment:
       - EULA=TRUE
       - VERSION=$MINECRAFT_VERSION
-      - TYPE=VANILLA
+      - TYPE=$SERVER_TYPE
       - MEMORY=$MEMORY
       - DIFFICULTY=$MINECRAFT_DIFFICULTY
       - MODE=$MINECRAFT_MODE
@@ -862,6 +904,36 @@ services:
       - JVM_XX_OPTS=-XX:+UseG1GC -XX:G1HeapRegionSize=4M -XX:+UnlockExperimentalVMOptions -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200
       - TZ=America/Sao_Paulo
 EOF
+
+    # Add Modrinth mod configuration if specified
+    if [[ -n "$MODRINTH_PROJECTS" ]]; then
+        echo -e "${YELLOW}Adding Modrinth mod configuration...${NC}"
+        cat >> docker-compose.yml << EOF
+      - MODRINTH_PROJECTS=$MODRINTH_PROJECTS
+      - MODRINTH_DOWNLOAD_DEPENDENCIES=$MODRINTH_DOWNLOAD_DEPS
+EOF
+    fi
+
+    # Add mod loader version if specified
+    if [[ -n "$MOD_LOADER_VERSION" ]]; then
+        case "$SERVER_TYPE" in
+            FABRIC)
+                cat >> docker-compose.yml << EOF
+      - FABRIC_LOADER_VERSION=$MOD_LOADER_VERSION
+EOF
+                ;;
+            FORGE)
+                cat >> docker-compose.yml << EOF
+      - FORGE_VERSION=$MOD_LOADER_VERSION
+EOF
+                ;;
+            NEOFORGE)
+                cat >> docker-compose.yml << EOF
+      - NEOFORGE_VERSION=$MOD_LOADER_VERSION
+EOF
+                ;;
+        esac
+    fi
 
     # Add world import configuration if enabled
     if [[ "$MINECRAFT_WORLD_IMPORT_READY" == "true" && -d "$MINECRAFT_WORLD_IMPORT_DIR" ]]; then
@@ -1821,6 +1893,22 @@ while [[ $# -gt 0 ]]; do
             ;;
         --disk-size)
             DISK_SIZE_GB="$2"
+            shift 2
+            ;;
+        --server-type)
+            SERVER_TYPE="$(echo "$2" | tr '[:lower:]' '[:upper:]')"
+            shift 2
+            ;;
+        --mods)
+            MODRINTH_PROJECTS="$2"
+            shift 2
+            ;;
+        --mod-deps)
+            MODRINTH_DOWNLOAD_DEPS="$2"
+            shift 2
+            ;;
+        --mod-loader-version)
+            MOD_LOADER_VERSION="$2"
             shift 2
             ;;
         -h|--help)

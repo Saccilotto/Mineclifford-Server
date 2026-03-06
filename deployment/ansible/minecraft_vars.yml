@@ -17,6 +17,17 @@ minecraft_java_simulation_distance: 6
 # Bedrock Edition — disabled (vanilla Java only)
 minecraft_bedrock_enabled: false
 
+# Mod Support — set minecraft_java_type to FABRIC, FORGE, or NEOFORGE when using mods
+# Example for Create mod (Fabric):
+#   minecraft_java_type: "FABRIC"
+#   minecraft_java_version: "1.20.1"
+#   minecraft_modrinth_projects: "create-fabric,fabric-api"
+#   minecraft_modrinth_download_deps: "required"
+#   minecraft_mod_loader_version: ""  # empty = latest
+minecraft_modrinth_projects: ""
+minecraft_modrinth_download_deps: "required"
+minecraft_mod_loader_version: ""
+
 # Monitoring Configuration
 # Override these in minecraft_secrets.yml (gitignored) with secure values.
 # If left commented out, the playbook defaults will be used.

@@ -34,7 +34,13 @@ javaEdition:
     onlineMode: false
     resourcePack: ""
     pvp: true
-  
+
+  # Mod support — set server.type to FABRIC, FORGE, or NEOFORGE when using mods
+  mods:
+    modrinthProjects: ""           # Comma-separated Modrinth slugs (e.g. "create-fabric,fabric-api")
+    modrinthDownloadDeps: required # none, required, optional
+    modLoaderVersion: ""           # Specific loader version (empty = latest)
+
   service:
     type: LoadBalancer
     port: 25565

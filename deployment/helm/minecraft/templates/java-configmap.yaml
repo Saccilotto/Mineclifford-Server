@@ -29,5 +29,18 @@ data:
   {{- if .Values.javaEdition.server.resourcePack }}
   RESOURCE_PACK: {{ .Values.javaEdition.server.resourcePack | quote }}
   {{- end }}
+  {{- if .Values.javaEdition.mods.modrinthProjects }}
+  MODRINTH_PROJECTS: {{ .Values.javaEdition.mods.modrinthProjects | quote }}
+  MODRINTH_DOWNLOAD_DEPENDENCIES: {{ .Values.javaEdition.mods.modrinthDownloadDeps | default "required" | quote }}
+  {{- end }}
+  {{- if .Values.javaEdition.mods.modLoaderVersion }}
+  {{- if eq (.Values.javaEdition.server.type | upper) "FABRIC" }}
+  FABRIC_LOADER_VERSION: {{ .Values.javaEdition.mods.modLoaderVersion | quote }}
+  {{- else if eq (.Values.javaEdition.server.type | upper) "FORGE" }}
+  FORGE_VERSION: {{ .Values.javaEdition.mods.modLoaderVersion | quote }}
+  {{- else if eq (.Values.javaEdition.server.type | upper) "NEOFORGE" }}
+  NEOFORGE_VERSION: {{ .Values.javaEdition.mods.modLoaderVersion | quote }}
+  {{- end }}
+  {{- end }}
   TZ: {{ .Values.timezone | quote }}
 {{- end }}
