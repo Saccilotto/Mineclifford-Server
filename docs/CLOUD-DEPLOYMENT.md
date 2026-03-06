@@ -50,6 +50,22 @@ Deploy Minecraft servers to AWS or Azure using `minecraft-ops.sh`.
 
 No cloud credentials needed. Creates a `docker-compose.yml` and runs containers locally.
 
+### Modded Server (any orchestration)
+
+Add `--server-type` and `--mods` to any deploy command. See [MODS.md](MODS.md) for full details.
+
+```bash
+# Create mod on AWS Kubernetes (Fabric)
+./minecraft-ops.sh deploy --provider aws --orchestration kubernetes \
+  --server-type FABRIC --mods "create-fabric,fabric-api" \
+  --minecraft-version 1.20.1 --memory 4G
+
+# Create mod on local Docker (Forge)
+./minecraft-ops.sh deploy --orchestration local \
+  --server-type FORGE --mods "create" \
+  --minecraft-version 1.20.1 --memory 4G
+```
+
 ## What Happens During Deploy
 
 ### Step 1: Validation

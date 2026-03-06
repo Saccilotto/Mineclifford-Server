@@ -26,6 +26,19 @@ services:
 {% if minecraft_world_import is defined %}
       - WORLD=/import_world/world.tar.gz
 {% endif %}
+{% if minecraft_modrinth_projects is defined and minecraft_modrinth_projects != '' %}
+      - MODRINTH_PROJECTS={{ minecraft_modrinth_projects }}
+      - MODRINTH_DOWNLOAD_DEPENDENCIES={{ minecraft_modrinth_download_deps | default('required') }}
+{% endif %}
+{% if minecraft_mod_loader_version is defined and minecraft_mod_loader_version != '' %}
+{% if minecraft_java_type | default('VANILLA') | upper == 'FABRIC' %}
+      - FABRIC_LOADER_VERSION={{ minecraft_mod_loader_version }}
+{% elif minecraft_java_type | default('VANILLA') | upper == 'FORGE' %}
+      - FORGE_VERSION={{ minecraft_mod_loader_version }}
+{% elif minecraft_java_type | default('VANILLA') | upper == 'NEOFORGE' %}
+      - NEOFORGE_VERSION={{ minecraft_mod_loader_version }}
+{% endif %}
+{% endif %}
       - TZ={{ timezone | default('America/Sao_Paulo') }}
     ports:
       - "25565:25565"
