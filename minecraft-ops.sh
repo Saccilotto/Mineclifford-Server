@@ -1,4 +1,5 @@
 #!/bin/bash
+set -o pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -37,6 +38,7 @@ AWS_REGION="sa-east-1"
 AZURE_LOCATION="East US 2"
 INSTANCE_TYPE=""                # auto-set per provider if empty
 DISK_SIZE_GB=30
+REGION_OVERRIDE=""
 
 # Create log file
 touch $DEPLOYMENT_LOG
@@ -85,7 +87,8 @@ function show_help {
     echo -e "  -m, --mode <survival|creative>  Game mode (default: survival)"
     echo -e "  -d, --difficulty <peaceful|easy|normal|hard>"
     echo -e "                                  Game difficulty (default: normal)"
-    echo -e "  -b, --no-bedrock                Skip Bedrock Edition deployment"
+    echo -e "  --bedrock                       Enable Bedrock Edition deployment"
+    echo -e "  -b, --no-bedrock                Disable Bedrock Edition deployment"
     echo -e "  -w, --world-import FILE         Import world from zip file"
     echo -e "  -k, --k8s <eks|aks>             Kubernetes provider (default: eks)" 
     echo -e "  -n, --namespace NAMESPACE       Kubernetes namespace (default: mineclifford)"
@@ -160,7 +163,7 @@ function handle_error {
                 ;;
             "local")
                 echo -e "${YELLOW}Stopping and removing local Docker containers...${NC}"
-                docker-compose down -v || true
+                docker compose down -v || true
                 ;;
         esac
     fi
@@ -197,9 +200,9 @@ function validate_environment {
             echo -e "${RED}Error: Required tool 'docker' is not installed.${NC}"
             handle_error "Missing required tool: docker" "pre-operation"
         fi
-        if ! command -v docker-compose &> /dev/null; then
-            echo -e "${RED}Error: Required tool 'docker-compose' is not installed.${NC}"
-            handle_error "Missing required tool: docker-compose" "pre-operation"
+        if ! docker compose version &> /dev/null; then
+            echo -e "${RED}Error: Required tool 'docker compose' (Docker Compose V2 plugin) is not installed.${NC}"
+            handle_error "Missing required tool: docker compose" "pre-operation"
         fi
     fi
     
@@ -323,8 +326,17 @@ function export_terraform_vars {
         fi
     fi
 
+    # Apply region override to the correct provider
+    if [[ -n "$REGION_OVERRIDE" ]]; then
+        if [[ "$PROVIDER" == "aws" ]]; then
+            AWS_REGION="$REGION_OVERRIDE"
+        elif [[ "$PROVIDER" == "azure" ]]; then
+            AZURE_LOCATION="$REGION_OVERRIDE"
+        fi
+    fi
+
     # Universal variables
-    export TF_VAR_server_names="$(printf '["%s"]' "$(IFS='","'; echo "${SERVER_NAMES[*]}")")"
+    export TF_VAR_server_names="$(printf '%s\n' "${SERVER_NAMES[@]}" | jq -R . | jq -cs .)"
 
     # Provider-specific variables
     if [[ "$PROVIDER" == "aws" ]]; then
@@ -442,6 +454,26 @@ function run_terraform {
     echo ""
 }
 
+# Load or generate persistent passwords for RCON/Grafana
+function ensure_passwords {
+    local pw_file="$SCRIPT_DIR/.rcon_password"
+    if [[ -f "$pw_file" ]]; then
+        source "$pw_file"
+    fi
+    if [[ -z "${RCON_PASSWORD:-}" ]]; then
+        RCON_PASSWORD="$(openssl rand -base64 16)"
+    fi
+    if [[ -z "${GRAFANA_PASSWORD:-}" ]]; then
+        GRAFANA_PASSWORD="$(openssl rand -base64 16)"
+    fi
+    # Cache for future runs
+    cat > "$pw_file" << PWEOF
+RCON_PASSWORD="$RCON_PASSWORD"
+GRAFANA_PASSWORD="$GRAFANA_PASSWORD"
+PWEOF
+    chmod 600 "$pw_file"
+}
+
 # Run Ansible with error handling
 function run_ansible {
     echo -e "${BLUE}Running Ansible playbooks for Minecraft...${NC}"
@@ -480,8 +512,8 @@ minecraft_bedrock_gamemode: "$MINECRAFT_MODE"
 minecraft_bedrock_difficulty: "$MINECRAFT_DIFFICULTY"
 
 # Monitoring Configuration
-rcon_password: "${RCON_PASSWORD:-$(openssl rand -base64 16)}"
-grafana_password: "${GRAFANA_PASSWORD:-$(openssl rand -base64 16)}"
+rcon_password: "$RCON_PASSWORD"
+grafana_password: "$GRAFANA_PASSWORD"
 timezone: "America/Sao_Paulo"
 
 # Server Names
@@ -518,10 +550,8 @@ EOF
     echo -e "${YELLOW}Running Minecraft setup playbook...${NC}"
     if [[ "$ORCHESTRATION" == "swarm" ]]; then
         ansible-playbook -i ../../static_ip.ini swarm_setup.yml -e "@minecraft_vars.yml" ${ANSIBLE_EXTRA_VARS:+-e "$ANSIBLE_EXTRA_VARS"} || handle_error "Ansible playbook execution failed" "ansible"
-    fi #
-    #     ansible-playbook -i ../../static_ip.ini minecraft_setup.yml -e "@minecraft_vars.yml" ${ANSIBLE_EXTRA_VARS:+-e "$ANSIBLE_EXTRA_VARS"} || handle_error "Ansible playbook execution failed" "ansible"
-    # fi
-    
+    fi
+
     cd ../..
     
     # Final connectivity verification
@@ -555,7 +585,7 @@ function import_world {
     # Based on orchestration type, copy the world
     case "$ORCHESTRATION" in
         local)
-            # Set up for local import during docker-compose
+            # Set up for local import during docker compose
             export MINECRAFT_WORLD_DIR="$IMPORT_DIR"
             ;;
         swarm|kubernetes)
@@ -797,7 +827,7 @@ function deploy_local {
     # mkdir -p data/prometheus
     # mkdir -p data/grafana
     
-    # Create a docker-compose file with our parameters
+    # Create a docker compose file with our parameters
     echo -e "${YELLOW}Creating docker-compose.yml with:${NC}"
     echo -e "  Version: ${YELLOW}$MINECRAFT_VERSION${NC}"
     echo -e "  Game Mode: ${YELLOW}$MINECRAFT_MODE${NC}"
@@ -812,10 +842,11 @@ version: '3.8'
 services:
   # Java Edition Minecraft Server
   minecraft-java:
-    image: itzg/minecraft-server:$MINECRAFT_VERSION
+    image: itzg/minecraft-server:latest
     container_name: minecraft-java
     environment:
       - EULA=TRUE
+      - VERSION=$MINECRAFT_VERSION
       - TYPE=VANILLA
       - MEMORY=$MEMORY
       - DIFFICULTY=$MINECRAFT_DIFFICULTY
@@ -870,7 +901,7 @@ EOF
 
   # Bedrock Edition Minecraft Server
   minecraft-bedrock:
-    image: itzg/minecraft-bedrock-server:$MINECRAFT_VERSION
+    image: itzg/minecraft-bedrock-server:latest
     container_name: minecraft-bedrock
     environment:
       - EULA=TRUE
@@ -974,12 +1005,12 @@ EOF
     
     # Start the services
     echo -e "${YELLOW}Starting Minecraft servers...${NC}"
-    docker-compose up -d || handle_error "Failed to start Docker containers" "local"
+    docker compose up -d || handle_error "Failed to start Docker containers" "local"
     
     # Check status
     echo -e "${YELLOW}Checking if services are running...${NC}"
     sleep 10
-    docker-compose ps || handle_error "Failed to check Docker container status" "local"
+    docker compose ps || handle_error "Failed to check Docker container status" "local"
     
     echo -e "${GREEN}Local deployment completed successfully.${NC}"
     echo -e "${YELLOW}Access Minecraft Java server at: localhost:25565${NC}"
@@ -1138,7 +1169,7 @@ function restore_worlds {
         # Restore local volumes
         if [[ -f "$BACKUP_DIR/$selected_backup/minecraft_java_$selected_backup.tar.gz" ]]; then
             echo -e "${YELLOW}Stopping Docker containers...${NC}"
-            docker-compose down
+            docker compose down
             
             echo -e "${YELLOW}Restoring Minecraft Java world...${NC}"
             rm -rf data/minecraft-java/*
@@ -1151,12 +1182,12 @@ function restore_worlds {
             fi
             
             echo -e "${YELLOW}Starting Docker containers...${NC}"
-            docker-compose up -d
+            docker compose up -d
         else
             # Older backup format
             if [[ -f "$BACKUP_DIR/minecraft_java_$selected_backup.tar.gz" ]]; then
                 echo -e "${YELLOW}Stopping Docker containers...${NC}"
-                docker-compose down
+                docker compose down
                 
                 echo -e "${YELLOW}Restoring Minecraft Java world...${NC}"
                 rm -rf data/minecraft-java/*
@@ -1169,7 +1200,7 @@ function restore_worlds {
                 fi
                 
                 echo -e "${YELLOW}Starting Docker containers...${NC}"
-                docker-compose up -d
+                docker compose up -d
             else
                 handle_error "Backup files not found in selected backup" "restore"
             fi
@@ -1552,7 +1583,7 @@ function destroy_infrastructure {
     if [[ "$ORCHESTRATION" == "local" ]]; then
         # Destroy local Docker containers
         echo -e "${YELLOW}Stopping and removing Docker containers...${NC}"
-        docker-compose down -v || handle_error "Failed to stop Docker containers" "destroy"
+        docker compose down -v || handle_error "Failed to stop Docker containers" "destroy"
         
         # Remove data directories if forced
         if [[ "$FORCE_CLEANUP" == "true" ]]; then
@@ -1612,6 +1643,9 @@ function deploy_infrastructure {
     echo -e "Provider: ${BLUE}$PROVIDER${NC}"
     echo -e "Orchestration: ${BLUE}$ORCHESTRATION${NC}"
 
+    # Ensure RCON/Grafana passwords are loaded or generated
+    ensure_passwords
+
     # In the deploy_infrastructure function
     if [[ "$PROVIDER" == "aws" ]]; then
         KUBERNETES_PROVIDER="eks"
@@ -1630,7 +1664,7 @@ function deploy_infrastructure {
         echo -e "${YELLOW}Deploying with a single node. Configuring single-node swarm.${NC}"
         SINGLE_NODE_SWARM=true
     else
-        echo -e "${YELLOW}Deploying with a single node. Configuring single-node swarm.${NC}"
+        echo -e "${YELLOW}Deploying with multiple nodes. Configuring multi-node swarm.${NC}"
         SINGLE_NODE_SWARM=false
     fi
 
@@ -1717,6 +1751,10 @@ while [[ $# -gt 0 ]]; do
             MINECRAFT_DIFFICULTY="$2"
             shift 2
             ;;
+        --bedrock|--use-bedrock)
+            USE_BEDROCK=true
+            shift
+            ;;
         -b|--no-bedrock)
             USE_BEDROCK=false
             shift
@@ -1774,8 +1812,7 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --region)
-            AWS_REGION="$2"
-            AZURE_LOCATION="$2"
+            REGION_OVERRIDE="$2"
             shift 2
             ;;
         --instance-type)

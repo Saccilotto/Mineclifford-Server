@@ -1,0 +1,18 @@
+{{- if and .Values.rcon.enabled .Values.rcon.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "minecraft.fullname" . }}-rcon-pvc
+  labels:
+    {{- include "minecraft.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rcon
+spec:
+  accessModes:
+    - {{ .Values.rcon.persistence.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.rcon.persistence.size }}
+  {{- if .Values.rcon.persistence.storageClass }}
+  storageClassName: {{ .Values.rcon.persistence.storageClass | quote }}
+  {{- end }}
+{{- end }}

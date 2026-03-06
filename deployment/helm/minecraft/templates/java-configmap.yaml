@@ -1,0 +1,33 @@
+{{- if .Values.javaEdition.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "minecraft.fullname" . }}-java-config
+  labels:
+    {{- include "minecraft.labels" . | nindent 4 }}
+    app.kubernetes.io/component: java
+data:
+  EULA: "TRUE"
+  TYPE: {{ .Values.javaEdition.server.type | quote }}
+  MEMORY: {{ .Values.javaEdition.server.memory | quote }}
+  DIFFICULTY: {{ .Values.javaEdition.server.difficulty | quote }}
+  MODE: {{ .Values.javaEdition.server.gameMode | quote }}
+  MOTD: {{ .Values.javaEdition.server.motd | quote }}
+  MAX_PLAYERS: {{ .Values.javaEdition.server.maxPlayers | quote }}
+  ONLINE_MODE: {{ .Values.javaEdition.server.onlineMode | upper | quote }}
+  ALLOW_NETHER: {{ .Values.javaEdition.server.allowNether | quote }}
+  ENABLE_COMMAND_BLOCK: {{ .Values.javaEdition.server.enableCommandBlock | quote }}
+  SPAWN_PROTECTION: {{ .Values.javaEdition.server.spawnProtection | quote }}
+  VIEW_DISTANCE: {{ .Values.javaEdition.server.viewDistance | quote }}
+  PVP: {{ .Values.javaEdition.server.pvp | quote }}
+  {{- if .Values.javaEdition.server.ops }}
+  OPS: {{ .Values.javaEdition.server.ops | quote }}
+  {{- end }}
+  {{- if .Values.javaEdition.server.whitelist }}
+  WHITELIST: {{ .Values.javaEdition.server.whitelist | quote }}
+  {{- end }}
+  {{- if .Values.javaEdition.server.resourcePack }}
+  RESOURCE_PACK: {{ .Values.javaEdition.server.resourcePack | quote }}
+  {{- end }}
+  TZ: {{ .Values.timezone | quote }}
+{{- end }}

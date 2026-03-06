@@ -2,7 +2,7 @@
 # Mineclifford Installation Script
 # Installs all dependencies and sets up the environment
 
-set -e
+set -eo pipefail
 
 echo "=================================="
 echo "Mineclifford Installation Script"
@@ -135,4 +135,4 @@ echo ""
 echo "  4. Deploy your server:"
 echo "     ./minecraft-ops.sh deploy --provider aws --orchestration swarm"
 echo ""
-echo "For more information, see: docs/version-manager.md"
+echo "For more information, see: docs/CLI-REFERENCE.md"

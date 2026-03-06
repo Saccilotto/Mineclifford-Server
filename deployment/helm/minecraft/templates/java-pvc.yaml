@@ -1,0 +1,19 @@
+{{- if and .Values.javaEdition.enabled .Values.javaEdition.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "minecraft.fullname" . }}-java-pvc
+  labels:
+    {{- include "minecraft.labels" . | nindent 4 }}
+    app.kubernetes.io/component: java
+    edition: java
+spec:
+  accessModes:
+    - {{ .Values.javaEdition.persistence.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.javaEdition.persistence.size }}
+  {{- if .Values.javaEdition.persistence.storageClass }}
+  storageClassName: {{ .Values.javaEdition.persistence.storageClass | quote }}
+  {{- end }}
+{{- end }}

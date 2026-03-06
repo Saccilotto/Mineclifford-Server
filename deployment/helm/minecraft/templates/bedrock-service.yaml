@@ -1,0 +1,23 @@
+{{- if .Values.bedrockEdition.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "minecraft.fullname" . }}-bedrock
+  labels:
+    {{- include "minecraft.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bedrock
+  {{- with .Values.bedrockEdition.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.bedrockEdition.service.type }}
+  selector:
+    {{- include "minecraft.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: bedrock
+  ports:
+  - port: {{ .Values.bedrockEdition.service.port }}
+    targetPort: 19132
+    protocol: {{ .Values.bedrockEdition.service.protocol }}
+    name: minecraft-bedrock
+{{- end }}

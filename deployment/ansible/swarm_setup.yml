@@ -158,13 +158,6 @@
     when: single_node_swarm and (swarm_info.failed or not swarm_info.docker_swarm_active)
     ignore_errors: yes
 
-  # Get manager node IP
-  - name: Get manager node IP
-    set_fact:
-      manager_ip_result: "{{ ansible_facts['default_ipv4']['address'] }}"
-    delegate_to: "{{ manager_node }}"
-    run_once: true
-
   - name: Import Minecraft world if provided
     block:
       - name: Create temporary directory for world import

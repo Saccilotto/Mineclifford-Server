@@ -18,7 +18,7 @@ javaEdition:
     pullPolicy: IfNotPresent
   
   server:
-    type: PAPER
+    type: VANILLA
     eula: true
     gameMode: survival
     difficulty: normal
@@ -31,7 +31,7 @@ javaEdition:
     maxPlayers: 20
     ops: ""
     whitelist: ""
-    onlineMode: true
+    onlineMode: false
     resourcePack: ""
     pvp: true
   
