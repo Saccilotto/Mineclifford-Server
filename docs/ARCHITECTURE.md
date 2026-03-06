@@ -36,9 +36,10 @@ Mineclifford has two main entry points: a **web dashboard** for browser-based ma
 | --------- | ------ | ----- |
 | CLI (`minecraft-ops.sh`) | Active | Primary deployment tool |
 | Web Dashboard | On standby | Fully built but not actively tested against current infra changes |
+| Production Deployment (Traefik/SSL) | On standby | Part of web dashboard layer; not tested with latest changes |
 | Terraform (AWS/Azure) | Active | Recently updated resource configs and variable integration |
 | Ansible + Docker Swarm | Active | Primary orchestration method |
-| Kubernetes (EKS/AKS) | On standby | Manifests defined; tests removed in recent refactor |
+| Kubernetes (EKS/AKS) | Active | Manifests and infrastructure defined; testing in progress |
 | Helm Charts | On standby | Available as alternative to Kustomize |
 | Cloudflare DNS/SSL | Active | Full TLS stack with Traefik integration |
 | Monitoring (Prometheus/Grafana) | On standby | Defined in Swarm stack; disabled in Ansible playbook |
@@ -106,7 +107,7 @@ All Terraform-managed resources receive a consistent set of tags:
 
 For Kubernetes modules, these are passed as `TF_VAR_tags` (JSON map). For standalone modules (EC2/VM), they are set via `common_tags` locals that reference individual variables.
 
-## Web Dashboard (On Standby)
+## Web Dashboard and Production Stack (On Standby)
 
 The web dashboard is a fully built FastAPI + vanilla JS application that provides:
 
@@ -115,7 +116,9 @@ The web dashboard is a fully built FastAPI + vanilla JS application that provide
 - Cloud deployment progress tracking
 - One-click server creation for Local, AWS, or Azure
 
-**Current status**: The dashboard code exists and is structurally complete, but it has not been actively tested against recent infrastructure changes (variable integration, resource config updates). The CLI script (`minecraft-ops.sh`) is the primary and tested deployment interface.
+The production deployment stack (Traefik reverse proxy, Let's Encrypt SSL via Cloudflare DNS challenge, BasicAuth protection) is part of this same web interface layer.
+
+**Current status**: Both the dashboard and the production Traefik stack exist and are structurally complete, but they have not been actively tested against recent infrastructure changes (variable integration, resource config updates). The CLI script (`minecraft-ops.sh`) is the primary and tested deployment interface.
 
 To run the dashboard locally:
 
@@ -124,7 +127,7 @@ docker compose -f docker-compose.web.yml up -d
 # Access at http://localhost
 ```
 
-For production with SSL:
+For production with SSL (on standby):
 
 ```bash
 docker compose -f docker-compose.traefik.yml up -d

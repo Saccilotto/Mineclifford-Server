@@ -216,36 +216,24 @@ Optional Prometheus and Grafana stack for server metrics:
 
 Access Grafana at `http://server-ip:3000` (default: admin/admin)
 
-## Production Deployment
-
-Deploy with Traefik reverse proxy, SSL, and BasicAuth protection:
-
-```bash
-# 1. Setup Cloudflare DNS
-cd terraform/cloudflare
-terraform apply -var="platform_ip=YOUR_SERVER_IP"
-
-# 2. Generate BasicAuth password
-./scripts/generate-basicauth.sh admin YourPassword
-
-# 3. Configure .env with credentials
-
-# 4. Deploy platform
-docker compose -f docker-compose.traefik.yml up -d
-```
-
-Access at `https://yourdomain.com` with BasicAuth credentials.
+## Deploying to the Cloud
 
 See [docs/CLOUD-DEPLOYMENT.md](docs/CLOUD-DEPLOYMENT.md) for the full cloud deployment guide.
 
-## Web Dashboard (On Standby)
+## Web Dashboard and Production Deployment (On Standby)
 
-A browser-based management interface exists at `src/web/` (FastAPI + vanilla JS). It supports real-time console streaming, server creation, and deployment progress tracking. However, it has **not been actively tested** against recent infrastructure changes and is considered on standby. The CLI (`minecraft-ops.sh`) is the primary and tested deployment interface.
+A browser-based management interface exists at `src/web/` (FastAPI + vanilla JS). It supports real-time console streaming, server creation, and deployment progress tracking. The production deployment stack (Traefik reverse proxy, Let's Encrypt SSL, BasicAuth, Cloudflare DNS) is also part of this web interface layer.
+
+Both the dashboard and the production Traefik deployment have **not been actively tested** against recent infrastructure changes and are considered on standby. The CLI (`minecraft-ops.sh`) is the primary and tested deployment interface.
 
 ```bash
 # Run the dashboard locally (not tested with latest infra changes)
 docker compose -f docker-compose.web.yml up -d
 # Access at http://localhost
+
+# Production with SSL (on standby — not tested with latest changes)
+# docker compose -f docker-compose.traefik.yml up -d
+# Access at https://yourdomain.com
 ```
 
 ## Project Structure

@@ -35,9 +35,7 @@ Deploy Minecraft servers to AWS or Azure using `minecraft-ops.sh`.
   --region "East US 2" --instance-type Standard_B2ms
 ```
 
-### AWS with Kubernetes (On Standby)
-
-> **Note**: Kubernetes deployments are defined but not actively tested. The manifests exist and the infrastructure provisioning (EKS/AKS) works, but Kubernetes-specific tests were removed in a recent refactor. Use with caution.
+### AWS with Kubernetes
 
 ```bash
 ./minecraft-ops.sh deploy --provider aws --orchestration kubernetes \
