@@ -66,7 +66,7 @@ No manual jar downloads, no volume-mounting mod files — just declare what you 
   --server-type FABRIC \
   --mods "create-fabric,fabric-api" \
   --minecraft-version 1.20.1 \
-  --memory 4G --region sa-east-2
+  --memory 4G --region sa-east-1
 ```
 
 ### Deploy Create (Forge) — AWS Swarm
