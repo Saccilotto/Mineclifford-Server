@@ -319,6 +319,81 @@ function validate_environment {
     echo -e "${GREEN}Environment validation passed.${NC}"
 }
 
+# Filter Modrinth projects that don't have files for the selected loader + Minecraft version.
+# This prevents crash loops in itzg/minecraft-server when an incompatible project is requested.
+function sanitize_modrinth_projects {
+    if [[ -z "$MODRINTH_PROJECTS" ]]; then
+        return
+    fi
+
+    local loader=""
+    case "$SERVER_TYPE" in
+        FABRIC)
+            loader="fabric"
+            ;;
+        FORGE)
+            loader="forge"
+            ;;
+        NEOFORGE)
+            loader="neoforge"
+            ;;
+        *)
+            return
+            ;;
+    esac
+
+    if ! command -v curl &> /dev/null || ! command -v jq &> /dev/null; then
+        echo -e "${YELLOW}Warning: curl/jq not available to validate Modrinth compatibility. Continuing without preflight validation.${NC}"
+        return
+    fi
+
+    local requested_mods=()
+    IFS=',' read -r -a requested_mods <<< "$MODRINTH_PROJECTS"
+
+    local valid_mods=()
+    local invalid_mods=()
+
+    for raw_mod in "${requested_mods[@]}"; do
+        local mod
+        mod="$(echo "$raw_mod" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+        if [[ -z "$mod" ]]; then
+            continue
+        fi
+
+        local versions_count
+        versions_count="$(
+            curl -fsS --get "https://api.modrinth.com/v2/project/${mod}/version" \
+                --data-urlencode "loaders=[\"${loader}\"]" \
+                --data-urlencode "game_versions=[\"${MINECRAFT_VERSION}\"]" \
+                2>/dev/null | jq 'length' 2>/dev/null
+        )"
+
+        if [[ "$versions_count" =~ ^[0-9]+$ ]] && (( versions_count > 0 )); then
+            valid_mods+=("$mod")
+        else
+            invalid_mods+=("$mod")
+        fi
+    done
+
+    if (( ${#invalid_mods[@]} > 0 )); then
+        echo -e "${YELLOW}Skipping incompatible Modrinth project(s) for ${SERVER_TYPE}/${MINECRAFT_VERSION}: ${invalid_mods[*]}${NC}"
+    fi
+
+    if (( ${#valid_mods[@]} == 0 )); then
+        echo -e "${YELLOW}No compatible Modrinth projects found for ${SERVER_TYPE}/${MINECRAFT_VERSION}. Continuing without mods to keep server startup healthy.${NC}"
+        MODRINTH_PROJECTS=""
+        return
+    fi
+
+    local filtered_mods=""
+    IFS=',' filtered_mods="${valid_mods[*]}"
+
+    if [[ "$filtered_mods" != "$MODRINTH_PROJECTS" ]]; then
+        echo -e "${YELLOW}Using compatible Modrinth project list: ${filtered_mods}${NC}"
+    fi
+    MODRINTH_PROJECTS="$filtered_mods"
+}
+
 # Function to save Terraform state
 function save_terraform_state {
     if [[ "$SAVE_STATE" != "true" ]]; then
@@ -905,8 +980,6 @@ function generate_docker_compose_file {
         local data_prefix="$2"
 
         cat > "$compose_file" << EOF
-version: '3.8'
-
 services:
     # Java Edition Minecraft Server
     minecraft-java:
@@ -1044,6 +1117,7 @@ EOF
         volumes:
             - /var/run/docker.sock:/var/run/docker.sock
         environment:
+            - DOCKER_API_VERSION=1.41
             - WATCHTOWER_LABEL_ENABLE=true
             - WATCHTOWER_ROLLING_RESTART=true
             - WATCHTOWER_STOP_TIMEOUT=120s
@@ -1759,6 +1833,10 @@ function deploy_infrastructure {
 
     # Ensure RCON/Grafana passwords are loaded or generated
     ensure_passwords
+
+    # Remove incompatible Modrinth projects for the selected Minecraft version/loader
+    # to avoid startup crash loops in the Minecraft container.
+    sanitize_modrinth_projects
 
     # In cloud modes we derive default Kubernetes provider from cloud provider
     if [[ "$ORCHESTRATION" != "compose" || "$SKIP_TERRAFORM" != "true" ]]; then
