@@ -80,7 +80,7 @@ else
     echo -e "${YELLOW}No .env file found. Using default values.${NC}"
 fi
 
-SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
 
 echo "==========================================="
 echo "Mineclifford Operations - $(date)"
@@ -188,7 +188,7 @@ function handle_error {
                     MANAGER_IP=$(grep -A1 '\[instance1\]' static_ip.ini | tail -n1 | awk '{print $1}')
                     if [[ -n "$MANAGER_IP" ]]; then
                         echo -e "${YELLOW}Connecting to manager node $MANAGER_IP...${NC}"
-                        ssh $SSH_OPTS -i ssh_keys/instance1.pem ubuntu@$MANAGER_IP "docker stack rm Mineclifford" || true
+                        ssh "${SSH_OPTS[@]}" -i ssh_keys/instance1.pem "ubuntu@$MANAGER_IP" "docker stack rm Mineclifford" || true
                     fi
                 fi
                 ;;
@@ -386,7 +386,7 @@ function sanitize_modrinth_projects {
     fi
 
     local filtered_mods=""
-    IFS=',' filtered_mods="${valid_mods[*]}"
+    filtered_mods="$(IFS=,; printf '%s' "${valid_mods[*]}")"
 
     if [[ "$filtered_mods" != "$MODRINTH_PROJECTS" ]]; then
         echo -e "${YELLOW}Using compatible Modrinth project list: ${filtered_mods}${NC}"
@@ -697,9 +697,9 @@ EOF
     if [[ -n "$MANAGER_IP" ]]; then
         echo -e "${YELLOW}Checking services on manager node $MANAGER_IP...${NC}"
         if [[ "$ORCHESTRATION" == "compose" ]]; then
-            ssh $SSH_OPTS -i ssh_keys/instance1.pem ubuntu@$MANAGER_IP "docker compose -f /home/ubuntu/mineclifford-compose/docker-compose.yml ps" || echo -e "${YELLOW}Unable to check services, may still be initializing...${NC}"
+            ssh "${SSH_OPTS[@]}" -i ssh_keys/instance1.pem "ubuntu@$MANAGER_IP" "docker compose -f /home/ubuntu/mineclifford-compose/docker-compose.yml ps" || echo -e "${YELLOW}Unable to check services, may still be initializing...${NC}"
         else
-            ssh $SSH_OPTS -i ssh_keys/instance1.pem ubuntu@$MANAGER_IP "docker service ls" || echo -e "${YELLOW}Unable to check services, may still be initializing...${NC}"
+            ssh "${SSH_OPTS[@]}" -i ssh_keys/instance1.pem "ubuntu@$MANAGER_IP" "docker service ls" || echo -e "${YELLOW}Unable to check services, may still be initializing...${NC}"
         fi
     fi
     
@@ -1204,14 +1204,14 @@ if [[ "$ORCHESTRATION" == "compose" && "$SKIP_TERRAFORM" == "true" ]]; then
             echo -e "${YELLOW}Connecting to manager node $MANAGER_IP for backup...${NC}"
             
             # Run backup command on remote server
-            ssh $SSH_OPTS -i ssh_keys/instance1.pem ubuntu@$MANAGER_IP "bash /home/ubuntu/backup-minecraft.sh" || handle_error "Remote backup failed" "backup"
+            ssh "${SSH_OPTS[@]}" -i ssh_keys/instance1.pem "ubuntu@$MANAGER_IP" "bash /home/ubuntu/backup-minecraft.sh" || handle_error "Remote backup failed" "backup"
             
             # Create local backup directory
             mkdir -p "$BACKUP_DIR/$TIMESTAMP"
             
             # Copy backups from remote server
             echo -e "${YELLOW}Downloading backups from remote server...${NC}"
-            scp $SSH_OPTS -i ssh_keys/instance1.pem "ubuntu@$MANAGER_IP:/home/ubuntu/minecraft-backups/*.tar.gz" "$BACKUP_DIR/$TIMESTAMP/" || handle_error "Failed to download backups" "backup"
+            scp "${SSH_OPTS[@]}" -i ssh_keys/instance1.pem "ubuntu@$MANAGER_IP:/home/ubuntu/minecraft-backups/*.tar.gz" "$BACKUP_DIR/$TIMESTAMP/" || handle_error "Failed to download backups" "backup"
         else
             handle_error "Could not find manager IP in inventory" "backup"
         fi
@@ -1369,17 +1369,17 @@ function restore_worlds {
             echo -e "${YELLOW}Connecting to manager node $MANAGER_IP for restore...${NC}"
             
             # Create a temporary directory for selected backup
-            ssh $SSH_OPTS -i ssh_keys/instance1.pem ubuntu@$MANAGER_IP "mkdir -p /tmp/minecraft-restore" || handle_error "Failed to create temp directory on remote server" "restore"
+            ssh "${SSH_OPTS[@]}" -i ssh_keys/instance1.pem "ubuntu@$MANAGER_IP" "mkdir -p /tmp/minecraft-restore" || handle_error "Failed to create temp directory on remote server" "restore"
             
             # Copy backup to remote server
             echo -e "${YELLOW}Uploading backup to remote server...${NC}"
             if [[ -d "$BACKUP_DIR/$selected_backup" ]]; then
-                scp $SSH_OPTS -i ssh_keys/instance1.pem "$BACKUP_DIR/$selected_backup/"*.tar.gz "ubuntu@$MANAGER_IP:/tmp/minecraft-restore/" || handle_error "Failed to upload backup" "restore"
+                scp "${SSH_OPTS[@]}" -i ssh_keys/instance1.pem "$BACKUP_DIR/$selected_backup/"*.tar.gz "ubuntu@$MANAGER_IP:/tmp/minecraft-restore/" || handle_error "Failed to upload backup" "restore"
             else
-                scp $SSH_OPTS -i ssh_keys/instance1.pem "$BACKUP_DIR/minecraft_java_$selected_backup.tar.gz" "ubuntu@$MANAGER_IP:/tmp/minecraft-restore/" || handle_error "Failed to upload backup" "restore"
+                scp "${SSH_OPTS[@]}" -i ssh_keys/instance1.pem "$BACKUP_DIR/minecraft_java_$selected_backup.tar.gz" "ubuntu@$MANAGER_IP:/tmp/minecraft-restore/" || handle_error "Failed to upload backup" "restore"
                 
                 if [[ "$USE_BEDROCK" == "true" && -f "$BACKUP_DIR/minecraft_bedrock_$selected_backup.tar.gz" ]]; then
-                    scp $SSH_OPTS -i ssh_keys/instance1.pem "$BACKUP_DIR/minecraft_bedrock_$selected_backup.tar.gz" "ubuntu@$MANAGER_IP:/tmp/minecraft-restore/" || handle_error "Failed to upload Bedrock backup" "restore"
+                    scp "${SSH_OPTS[@]}" -i ssh_keys/instance1.pem "$BACKUP_DIR/minecraft_bedrock_$selected_backup.tar.gz" "ubuntu@$MANAGER_IP:/tmp/minecraft-restore/" || handle_error "Failed to upload Bedrock backup" "restore"
                 fi
             fi
             
@@ -1445,8 +1445,8 @@ rm -rf /tmp/minecraft-restore
 EOF
             
             # Upload and execute the restore script
-            scp $SSH_OPTS -i ssh_keys/instance1.pem /tmp/remote-restore.sh "ubuntu@$MANAGER_IP:/tmp/remote-restore.sh" || handle_error "Failed to upload restore script" "restore"
-            ssh $SSH_OPTS -i ssh_keys/instance1.pem ubuntu@$MANAGER_IP "chmod +x /tmp/remote-restore.sh && /tmp/remote-restore.sh" || handle_error "Remote restore failed" "restore"
+            scp "${SSH_OPTS[@]}" -i ssh_keys/instance1.pem /tmp/remote-restore.sh "ubuntu@$MANAGER_IP:/tmp/remote-restore.sh" || handle_error "Failed to upload restore script" "restore"
+            ssh "${SSH_OPTS[@]}" -i ssh_keys/instance1.pem "ubuntu@$MANAGER_IP" "chmod +x /tmp/remote-restore.sh && /tmp/remote-restore.sh" || handle_error "Remote restore failed" "restore"
             
         else
             handle_error "Could not find manager IP in inventory" "restore"
@@ -1607,7 +1607,7 @@ function check_status {
 
                 if [[ -n "$MANAGER_IP" ]]; then
                     echo -e "${YELLOW}Checking remote Docker Compose services on $MANAGER_IP:${NC}"
-                    ssh $SSH_OPTS -i ssh_keys/instance1.pem ubuntu@$MANAGER_IP "docker compose -f /home/ubuntu/mineclifford-compose/docker-compose.yml ps" || handle_error "Failed to check remote Docker Compose services" "status"
+                    ssh "${SSH_OPTS[@]}" -i ssh_keys/instance1.pem "ubuntu@$MANAGER_IP" "docker compose -f /home/ubuntu/mineclifford-compose/docker-compose.yml ps" || handle_error "Failed to check remote Docker Compose services" "status"
 
                     # Get connection information
                     echo -e "${YELLOW}Connection Information:${NC}"
@@ -1631,20 +1631,20 @@ function check_status {
             
             if [[ -n "$MANAGER_IP" ]]; then
                 echo -e "${YELLOW}Checking Docker Swarm services on $MANAGER_IP:${NC}"
-                ssh $SSH_OPTS -i ssh_keys/instance1.pem ubuntu@$MANAGER_IP "docker service ls" || handle_error "Failed to check Docker Swarm services" "status"
+                ssh "${SSH_OPTS[@]}" -i ssh_keys/instance1.pem "ubuntu@$MANAGER_IP" "docker service ls" || handle_error "Failed to check Docker Swarm services" "status"
                 
                 # Check logs
                 echo -e "${YELLOW}Checking Java server logs (last 10 lines):${NC}"
-                ssh $SSH_OPTS -i ssh_keys/instance1.pem ubuntu@$MANAGER_IP "docker service logs Mineclifford_minecraft-java --tail 10" || echo -e "${YELLOW}Could not fetch Java server logs${NC}"
+                ssh "${SSH_OPTS[@]}" -i ssh_keys/instance1.pem "ubuntu@$MANAGER_IP" "docker service logs Mineclifford_minecraft-java --tail 10" || echo -e "${YELLOW}Could not fetch Java server logs${NC}"
                 
                 if [[ "$USE_BEDROCK" == "true" ]]; then
                     echo -e "${YELLOW}Checking Bedrock server logs (last 10 lines):${NC}"
-                    ssh $SSH_OPTS -i ssh_keys/instance1.pem ubuntu@$MANAGER_IP "docker service logs Mineclifford_minecraft-bedrock --tail 10" || echo -e "${YELLOW}Could not fetch Bedrock server logs${NC}"
+                    ssh "${SSH_OPTS[@]}" -i ssh_keys/instance1.pem "ubuntu@$MANAGER_IP" "docker service logs Mineclifford_minecraft-bedrock --tail 10" || echo -e "${YELLOW}Could not fetch Bedrock server logs${NC}"
                 fi
                 
                 # Check node status
                 echo -e "${YELLOW}Checking Docker Swarm node status:${NC}"
-                ssh $SSH_OPTS -i ssh_keys/instance1.pem ubuntu@$MANAGER_IP "docker node ls" || echo -e "${YELLOW}Could not fetch node status${NC}"
+                ssh "${SSH_OPTS[@]}" -i ssh_keys/instance1.pem "ubuntu@$MANAGER_IP" "docker node ls" || echo -e "${YELLOW}Could not fetch node status${NC}"
                 
                 # Get connection information
                 echo -e "${YELLOW}Connection Information:${NC}"
@@ -1787,7 +1787,7 @@ function destroy_infrastructure {
             MANAGER_IP=$(grep -A1 '\[instance1\]' static_ip.ini | tail -n1 | awk '{print $1}')
             if [[ -n "$MANAGER_IP" ]]; then
                 echo -e "${YELLOW}Removing Docker stack from $MANAGER_IP...${NC}"
-                ssh $SSH_OPTS -i ssh_keys/instance1.pem ubuntu@$MANAGER_IP "docker stack rm Mineclifford" || echo -e "${YELLOW}Failed to remove Docker stack, continuing with destroy...${NC}"
+                ssh "${SSH_OPTS[@]}" -i ssh_keys/instance1.pem "ubuntu@$MANAGER_IP" "docker stack rm Mineclifford" || echo -e "${YELLOW}Failed to remove Docker stack, continuing with destroy...${NC}"
             fi
         fi
 
@@ -1796,7 +1796,7 @@ function destroy_infrastructure {
             MANAGER_IP=$(grep -A1 '\[instance1\]' static_ip.ini | tail -n1 | awk '{print $1}')
             if [[ -n "$MANAGER_IP" ]]; then
                 echo -e "${YELLOW}Removing Docker Compose services from $MANAGER_IP...${NC}"
-                ssh $SSH_OPTS -i ssh_keys/instance1.pem ubuntu@$MANAGER_IP "docker compose -f /home/ubuntu/mineclifford-compose/docker-compose.yml down -v" || echo -e "${YELLOW}Failed to remove Docker Compose services, continuing with destroy...${NC}"
+                ssh "${SSH_OPTS[@]}" -i ssh_keys/instance1.pem "ubuntu@$MANAGER_IP" "docker compose -f /home/ubuntu/mineclifford-compose/docker-compose.yml down -v" || echo -e "${YELLOW}Failed to remove Docker Compose services, continuing with destroy...${NC}"
             fi
         fi
         
