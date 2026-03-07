@@ -4,6 +4,8 @@
 
 set -eo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 echo "=================================="
 echo "Mineclifford Installation Script"
 echo "=================================="
@@ -46,7 +48,7 @@ if ! command -v terraform &> /dev/null; then
     fi
 fi
 
-TERRAFORM_VERSION=$(terraform version -json | grep -o '"version":"[^"]*' | cut -d'"' -f4)
+TERRAFORM_VERSION=$(terraform version -json | grep -o '"terraform_version": "[^"]*' | cut -d'"' -f4)
 echo -e "${GREEN}✓ Terraform $TERRAFORM_VERSION${NC}"
 
 # Check Ansible
@@ -60,10 +62,20 @@ fi
 ANSIBLE_VERSION=$(ansible --version | head -n1 | awk '{print $3}' | tr -d ']')
 echo -e "${GREEN}✓ Ansible $ANSIBLE_VERSION${NC}"
 
+# Set up virtual environment
+echo ""
+echo "Setting up Python virtual environment..."
+VENV_DIR="${SCRIPT_DIR:-.}/.venv"
+if [ ! -d "$VENV_DIR" ]; then
+    python3 -m venv "$VENV_DIR"
+fi
+source "$VENV_DIR/bin/activate"
+echo -e "${GREEN}✓ Virtual environment active ($VENV_DIR)${NC}"
+
 # Install Python dependencies
 echo ""
 echo "Installing Python dependencies..."
-pip3 install -r requirements.txt
+pip install -r requirements.txt
 echo -e "${GREEN}✓ Python dependencies installed${NC}"
 
 # Install Ansible collections
@@ -75,7 +87,7 @@ echo -e "${GREEN}✓ Ansible collections installed${NC}"
 # Install Mineclifford Version Manager
 echo ""
 echo "Installing Mineclifford Version Manager..."
-pip3 install -e .
+pip install -e .
 echo -e "${GREEN}✓ Version Manager installed${NC}"
 
 # Verify installation
