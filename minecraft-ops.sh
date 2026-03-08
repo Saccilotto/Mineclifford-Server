@@ -1095,8 +1095,8 @@ EOF
     rcon-web-admin:
         image: itzg/rcon:latest
         ports:
-            - "127.0.0.1:4326:4326"
-            - "127.0.0.1:4327:4327"
+            - "0.0.0.0:4326:4326"
+            - "0.0.0.0:4327:4327"
         volumes:
             - ${data_prefix}/rcon:/opt/rcon-web-admin/db
         environment:

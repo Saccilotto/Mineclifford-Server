@@ -121,13 +121,12 @@ services:
         max-file: "3"
 {% endif %}
 
-  # RCON Web Admin — access via SSH tunnel: ssh -L 4326:localhost:4326 user@server
-  # When the web dashboard comes online, Traefik will proxy this with SSL/auth.
+  # RCON Web Admin — password-protected via RWA_PASSWORD
   rcon-web-admin:
     image: itzg/rcon:latest
     ports:
-      - "127.0.0.1:4326:4326"
-      - "127.0.0.1:4327:4327"
+      - "0.0.0.0:4326:4326"
+      - "0.0.0.0:4327:4327"
     volumes:
       - rcon_web_admin_data:/opt/rcon-web-admin/db
     environment:
