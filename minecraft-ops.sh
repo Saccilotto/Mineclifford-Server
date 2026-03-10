@@ -124,6 +124,8 @@ function show_help {
     echo -e "  --region REGION                 Cloud region (provider-aware, default: sa-east-1 / East US 2)"
     echo -e "  --instance-type TYPE            VM/instance type (provider-aware)"
     echo -e "  --disk-size GB                  Disk size in GB (default: 30)"
+    echo -e "  --view-distance N               Server view distance in chunks (default: 8)"
+    echo -e "  --simulation-distance N         Server simulation distance in chunks (default: 6)"
     echo -e ""
     echo -e "${YELLOW}Mod Support:${NC}"
     echo -e "  --server-type TYPE              Server type: VANILLA|FORGE|FABRIC|NEOFORGE|PAPER (default: VANILLA)"
@@ -2040,6 +2042,14 @@ while [[ $# -gt 0 ]]; do
             ;;
         --mod-loader-version)
             MOD_LOADER_VERSION="$2"
+            shift 2
+            ;;
+        --view-distance)
+            MINECRAFT_VIEW_DISTANCE="$2"
+            shift 2
+            ;;
+        --simulation-distance)
+            MINECRAFT_SIMULATION_DISTANCE="$2"
             shift 2
             ;;
         -h|--help)
