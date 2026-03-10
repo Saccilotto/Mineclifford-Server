@@ -418,7 +418,7 @@ function save_terraform_state {
         fi
     fi
     
-    if $SCRIPT_DIR/scripts/save-terraform-state.sh --provider "$PROVIDER" --action save --orchestration "$ORCHESTRATION" --storage "$STORAGE_TYPE"; then
+    if $SCRIPT_DIR/scripts/save-terraform-state.sh --provider "$PROVIDER" --action save --orchestration "$ORCHESTRATION" --storage "$STORAGE_TYPE" --project-name "$PROJECT_NAME"; then
         echo -e "${GREEN}Terraform state saved successfully.${NC}"
     else
         echo -e "${YELLOW}Could not save Terraform state to remote storage. Continuing with local state.${NC}"
@@ -430,7 +430,7 @@ function save_terraform_state {
 function load_terraform_state {
     echo -e "${BLUE}Loading Terraform state...${NC}"
 
-    if $SCRIPT_DIR/scripts/save-terraform-state.sh --provider "$PROVIDER" --action load --orchestration "$ORCHESTRATION" --storage "$STORAGE_TYPE"; then
+    if $SCRIPT_DIR/scripts/save-terraform-state.sh --provider "$PROVIDER" --action load --orchestration "$ORCHESTRATION" --storage "$STORAGE_TYPE" --project-name "$PROJECT_NAME"; then
         echo -e "${GREEN}Terraform state loaded successfully.${NC}"
     else
         echo -e "${YELLOW}No remote Terraform state available (or failed to load). Using local state.${NC}"

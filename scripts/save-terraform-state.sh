@@ -12,6 +12,7 @@ PROVIDER="aws"
 ACTION="save"  # save or load
 STORAGE_TYPE="s3"  # s3, azure, or github
 ORCHESTRATION=""   # empty or "kubernetes"
+PROJECT_NAME=""    # project name for isolated state storage
 
 # Help function
 function show_help {
@@ -23,9 +24,10 @@ function show_help {
     echo -e "  -a, --action      Action to perform (save or load), default: save"
     echo -e "  -s, --storage     Storage type (s3, azure, or github), default: s3"
     echo -e "  -o, --orchestration  Orchestration type (swarm or kubernetes), default: empty"
+    echo -e "  -n, --project-name   Project name for isolated state storage per deployment"
     echo -e "  -h, --help        Show this help message"
     echo ""
-    echo -e "Example: ./save-terraform-state.sh --provider aws --action save --storage s3"
+    echo -e "Example: ./save-terraform-state.sh --provider aws --action save --storage s3 --project-name myserver"
 }
 
 # Parse command line arguments
@@ -45,6 +47,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -o|--orchestration)
             ORCHESTRATION="$2"
+            shift 2
+            ;;
+        -n|--project-name)
+            PROJECT_NAME="$2"
             shift 2
             ;;
         -h|--help)
@@ -73,7 +79,14 @@ if [[ "$ORCHESTRATION" == "kubernetes" ]]; then
     TERRAFORM_DIR="${TERRAFORM_DIR}/kubernetes"
 fi
 
-# Full path to terraform state
+# Build the remote storage path including project name for isolation
+if [[ -n "$PROJECT_NAME" ]]; then
+    REMOTE_STATE_DIR="${PROJECT_NAME}/${TERRAFORM_DIR}"
+else
+    REMOTE_STATE_DIR="${TERRAFORM_DIR}"
+fi
+
+# Full path to terraform state (local source files remain unchanged)
 TERRAFORM_STATE_PATH="${PROJECT_ROOT}/${TERRAFORM_DIR}/terraform.tfstate"
 TERRAFORM_STATE_BACKUP_PATH="${PROJECT_ROOT}/${TERRAFORM_DIR}/terraform.tfstate.backup"
 
@@ -94,11 +107,11 @@ if [[ "$PROVIDER" == "aws" ]]; then
     # Create a bucket name using a consistent pattern
     BUCKET_NAME="mineclifford-terraform-state-${AWS_ACCOUNT_ID:-$(aws sts get-caller-identity --query Account --output text)}"
     BUCKET_REGION="${AWS_REGION:-us-east-2}"
-    STATE_FILE_KEY="terraform-state/${TERRAFORM_DIR}/terraform.tfstate"
+    STATE_FILE_KEY="terraform-state/${REMOTE_STATE_DIR}/terraform.tfstate"
 elif [[ "$PROVIDER" == "azure" ]]; then
     STORAGE_ACCOUNT="${AZURE_STORAGE_ACCOUNT:-minecliffordterraformstate}"
     CONTAINER_NAME="terraform-state"
-    BLOB_NAME="${TERRAFORM_DIR}/terraform.tfstate"
+    BLOB_NAME="${REMOTE_STATE_DIR}/terraform.tfstate"
 fi
 
 # GitHub-based storage variables
@@ -268,25 +281,25 @@ function save_terraform_state {
         gh repo clone "${GITHUB_REPO}" . -- -q
         git checkout "${GITHUB_BRANCH}" -q 2>/dev/null || git checkout -b "${GITHUB_BRANCH}" -q
         
-        # Create directory structure if it doesn't exist
-        mkdir -p "${TERRAFORM_DIR}"
-        
+        # Create directory structure if it doesn't exist (includes project name)
+        mkdir -p "${REMOTE_STATE_DIR}"
+
         # Copy the state file from the source directory to the temporary directory
         echo -e "${YELLOW}Copying state files to repository...${NC}"
-        cp -v "${TERRAFORM_STATE_PATH}" "${TERRAFORM_DIR}/" || echo "Failed to copy state file"
-        
+        cp -v "${TERRAFORM_STATE_PATH}" "${REMOTE_STATE_DIR}/" || echo "Failed to copy state file"
+
         if [[ -f "${TERRAFORM_STATE_BACKUP_PATH}" ]]; then
-            cp -v "${TERRAFORM_STATE_BACKUP_PATH}" "${TERRAFORM_DIR}/" || echo "Failed to copy backup file"
+            cp -v "${TERRAFORM_STATE_BACKUP_PATH}" "${REMOTE_STATE_DIR}/" || echo "Failed to copy backup file"
         fi
-        
+
         # Add and commit the changes
-        git add "${TERRAFORM_DIR}" || echo "Failed to add files"
+        git add "${REMOTE_STATE_DIR}" || echo "Failed to add files"
         git config --local user.email "terraform-state@example.com" || echo "Failed to set git email"
         git config --local user.name "Mineclifford Terraform State" || echo "Failed to set git user name"
         
         git status
         
-        if git commit -m "Update Terraform state for ${TERRAFORM_DIR}" -q; then
+        if git commit -m "Update Terraform state for ${REMOTE_STATE_DIR}" -q; then
             echo "Changes committed successfully"
         else
             echo "No changes to commit"
@@ -375,17 +388,17 @@ function load_terraform_state {
             exit 1
         fi
         
-        # Check if the state file exists
-        if [[ -f "${TERRAFORM_DIR}/terraform.tfstate" ]]; then
+        # Check if the state file exists (look in project-scoped path)
+        if [[ -f "${REMOTE_STATE_DIR}/terraform.tfstate" ]]; then
             # Create the directory structure if it doesn't exist
             mkdir -p "${PROJECT_ROOT}/${TERRAFORM_DIR}"
-            
+
             # Copy the state file
             echo -e "${YELLOW}Copying state files from repository...${NC}"
-            cp -v "${TERRAFORM_DIR}/terraform.tfstate" "${TERRAFORM_STATE_PATH}"
-            
-            if [[ -f "${TERRAFORM_DIR}/terraform.tfstate.backup" ]]; then
-                cp -v "${TERRAFORM_DIR}/terraform.tfstate.backup" "${TERRAFORM_STATE_BACKUP_PATH}"
+            cp -v "${REMOTE_STATE_DIR}/terraform.tfstate" "${TERRAFORM_STATE_PATH}"
+
+            if [[ -f "${REMOTE_STATE_DIR}/terraform.tfstate.backup" ]]; then
+                cp -v "${REMOTE_STATE_DIR}/terraform.tfstate.backup" "${TERRAFORM_STATE_BACKUP_PATH}"
             fi
             
             cd "${PROJECT_ROOT}"
