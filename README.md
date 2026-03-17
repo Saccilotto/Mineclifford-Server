@@ -1,275 +1,257 @@
 # Mineclifford
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=flat&logo=docker&logoColor=white)](https://www.docker.com/)
-[![Terraform](https://img.shields.io/badge/terraform-%235835CC.svg?style=flat&logo=terraform&logoColor=white)](https://www.terraform.io/)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
+[![Terraform](https://img.shields.io/badge/Terraform-%235835CC.svg?style=flat&logo=terraform&logoColor=white)](https://www.terraform.io/)
+[![Ansible](https://img.shields.io/badge/Ansible-%23EE0000.svg?style=flat&logo=ansible&logoColor=white)](https://www.ansible.com/)
+[![Docker](https://img.shields.io/badge/Docker-%230db7ed.svg?style=flat&logo=docker&logoColor=white)](https://www.docker.com/)
+[![Kubernetes](https://img.shields.io/badge/Kubernetes-%23326CE5.svg?style=flat&logo=kubernetes&logoColor=white)](https://kubernetes.io/)
+[![AWS](https://img.shields.io/badge/AWS-%23FF9900.svg?style=flat&logo=amazonaws&logoColor=white)](https://aws.amazon.com/)
+[![Azure](https://img.shields.io/badge/Azure-%230078D4.svg?style=flat&logo=microsoftazure&logoColor=white)](https://azure.microsoft.com/)
 
-## Overview
+**Mineclifford** deploys and manages Minecraft servers from a single CLI command. It provisions cloud infrastructure with Terraform, configures servers with Ansible, and runs game instances in Docker containers -- on AWS, Azure, or your local machine.
 
-**Mineclifford** is a web-based platform for deploying and managing Minecraft servers. Deploy locally via Docker or to cloud infrastructure (AWS/Azure) with automated provisioning, monitoring, and SSL configuration.
+One command deploys a fully operational Minecraft server with monitoring, backups, RCON management, and auto-updates. Pick your cloud, orchestration mode, and game configuration; the pipeline handles the rest.
+
+```bash
+# Local server in under a minute
+./minecraft-ops.sh deploy --orchestration compose --skip-terraform
+
+# AWS with Docker Swarm
+./minecraft-ops.sh deploy --provider aws --orchestration swarm
+
+# Azure with Kubernetes
+./minecraft-ops.sh deploy --provider azure --orchestration kubernetes
+
+# Modded server (Create mod on Fabric)
+./minecraft-ops.sh deploy --orchestration compose --skip-terraform \
+  --server-type FABRIC --mods "create-fabric,fabric-api" --minecraft-version 1.20.1
+```
+
+## How It Works
+
+```
+User runs minecraft-ops.sh
+         |
+         v
+  +--------------+     +----------------+     +------------------+
+  |  Terraform   | --> |    Ansible     | --> | Docker Swarm /   |
+  |  provisions  |     |  configures    |     | Compose / K8s    |
+  |  cloud infra |     |  the server    |     | runs Minecraft   |
+  +--------------+     +----------------+     +------------------+
+   AWS EC2 / Azure VM    Docker, firewall,     Java + Bedrock
+   VPC, security groups  monitoring stack      RCON, Watchtower
+   Elastic IPs, SSH      world import          backups, monitoring
+```
+
+The pipeline has three stages. **Terraform** creates cloud resources (VPC, instances, security groups, Elastic IPs) and generates an Ansible inventory from the provisioned IPs. **Ansible** connects via SSH, installs Docker, initializes Swarm or Compose, deploys the Minecraft stack, and sets up automated backups. **Docker** runs the game server alongside RCON Web Admin and Watchtower for auto-updates.
+
+For Kubernetes deployments, the pipeline replaces Ansible with `kubectl` -- Terraform provisions an EKS or AKS cluster, and Kustomize overlays apply provider-specific patches (NLB annotations for AWS, managed-premium storage for Azure).
+
+For local deployments (`--skip-terraform`), the script generates a `docker-compose.yml` and runs everything on your machine. No cloud credentials needed.
 
 ## Features
 
-### Web Dashboard
+**Multi-cloud deployment** -- AWS (EC2, EKS) and Azure (VMs, AKS) with full Terraform automation. Infrastructure variables flow from CLI flags through `TF_VAR_*` exports into resource naming, tagging, and sizing.
 
-- **Real-time management** via browser interface
-- **Live console** with WebSocket streaming
-- **Server status** monitoring with auto-refresh
-- **One-click deployment** to local Docker or cloud providers
+**Three orchestration modes** -- Docker Swarm (single or multi-node), Kubernetes (Helm charts + Kustomize overlays per provider), and Docker Compose (local or on a cloud VM).
 
-### Cloud Deployment
+**Mod support** -- Fabric, Forge, and NeoForge mod loaders with auto-download from Modrinth. The CLI validates mod compatibility against your Minecraft version before deployment.
 
-- **Multi-cloud support**: AWS and Azure with Terraform automation
-- **Orchestration options**: Docker Swarm or Kubernetes
-- **Real-time progress**: Watch infrastructure provisioning and configuration via WebSocket
-- **DNS management**: Cloudflare integration for automatic domain setup
-- **SSL/TLS**: Let's Encrypt certificates via DNS challenge
+**Java + Bedrock editions** -- Both server types deploy side-by-side with independent configuration. Bedrock is optional (`--bedrock` / `--no-bedrock`).
 
-### Server Types
+**World management** -- Import worlds from zip files (Aternos-compatible), automated daily backups with rotation (keeps last 5), and interactive restore from backup history.
 
-- **Java Edition**: Paper, Vanilla, Spigot, Forge, Fabric
-- **Bedrock Edition**: Official server support
-- **Version flexibility**: Automatic version management and downloads
+**Monitoring stack** -- Prometheus + Grafana with pre-configured scrape targets, alert rules (low TPS, high memory, server down), and Node Exporter for host metrics.
 
-### Infrastructure
+**Production-ready web dashboard** (on standby) -- FastAPI backend with WebSocket console streaming, real-time deployment progress tracking, and an Nginx/Traefik frontend with Let's Encrypt SSL via Cloudflare DNS challenge.
 
-- **Terraform**: Automated cloud resource provisioning
-- **Ansible**: Server configuration and deployment automation
-- **Docker**: Containerized server instances
-- **Monitoring**: Prometheus and Grafana (optional)
+**Version Manager CLI** -- Python async tool (`mineclifford-version`) for querying, validating, and comparing Minecraft server versions across Paper, Vanilla, Spigot, Forge, and Fabric.
+
+**Terraform state management** -- Save/load state to S3, Azure Blob Storage, or a dedicated GitHub branch. Prevents duplicate infrastructure across machines.
 
 ## Architecture
 
-```plaintext
-┌─────────────────────────────────────────────────────┐
-│               Web Dashboard (Browser)               │
-│  • Create/manage servers  • Live console  • Status  │
-└────────────────────┬────────────────────────────────┘
-                     │
-          ┌──────────▼──────────┐
-          │   Nginx Reverse     │
-          │       Proxy         │
-          └──────────┬──────────┘
-                     │
-        ┌────────────┴────────────┐
-        │                         │
-┌───────▼─────────┐      ┌────────▼────────┐
-│ FastAPI Backend │      │ Frontend (HTML/ │
-│  • REST API     │      │  JS/Tailwind)   │
-│  • WebSocket    │      └─────────────────┘
-│  • Docker API   │
-└────────┬────────┘
-         │
-    ┌────┴────┐
-    │         │
-┌───▼──┐  ┌──▼────────────────────┐
-│Local │  │  Cloud Deployment     │
-│Docker│  │  ┌─────────────────┐  │
-│Servers│  │ │Terraform (IaC)  │  │
-└──────┘  │  │ • AWS/Azure     │  │
-          │  └────────┬────────┘  │
-          │           │           │
-          │  ┌────────▼────────┐  │
-          │  │Ansible (Config) │  │
-          │  │ • Docker Swarm  │  │
-          │  │ • Kubernetes    │  │
-          │  └────────┬────────┘  │
-          │           │           │
-          │  ┌────────▼────────┐  │
-          │  │ Cloud Minecraft │  │
-          │  │    Servers      │  │
-          │  └─────────────────┘  │
-          └───────────────────────┘
 ```
-
-**Components:**
-
-- **Web Dashboard**: Browser-based UI for server management with real-time updates
-- **Backend API**: FastAPI service handling requests, Docker orchestration, and cloud deployments
-- **Local Deployment**: Direct Docker container creation for development/testing
-- **Cloud Deployment**: Automated Terraform → Ansible pipeline for AWS/Azure infrastructure
-- **Monitoring**: Optional Prometheus/Grafana stack for metrics and dashboards
-
-## Prerequisites
-
-### For Local Development
-
-- Docker and Docker Compose
-- Git
-
-### For Cloud Deployments (Optional)
-
-- **Terraform** v1.0+ (for infrastructure provisioning)
-- **Ansible** v2.9+ (for server configuration)
-- **Cloud credentials**: AWS (via `aws configure`) or Azure (via `az login`)
-- **SSH key pair**: For connecting to cloud instances
-
-### For Production Deployment
-
-- **Domain**: Managed by Cloudflare (for DNS/SSL automation)
-- **Cloudflare API token**: With DNS edit permissions
+                     +---------------------------+
+                     |     User Entry Points     |
+                     |  +----------+ +---------+ |
+                     |  |   Web    | |   CLI   | |
+                     |  |Dashboard | |  Script | |
+                     |  +----+-----+ +----+----+ |
+                     +-------|-----------+|------+
+                             |            |
+                    +--------v------------v--------+
+                    |     Deployment Pipeline       |
+                    |                               |
+                    |  1. Terraform (provision)     |
+                    |  2. Ansible (configure)       |
+                    |     OR kubectl (k8s)          |
+                    |  3. Docker (run servers)      |
+                    +---------------+---------------+
+                                    |
+              +---------------------+---------------------+
+              |                     |                     |
+      +-------v--------+   +-------v--------+   +--------v-------+
+      |   AWS (EC2     |   |  Azure (VMs   |   |   Local        |
+      |   or EKS)      |   |   or AKS)     |   |   Docker       |
+      +----------------+   +---------------+   +----------------+
+```
 
 ## Quick Start
 
-### Option 1: Web Dashboard (Recommended)
+### Prerequisites
+
+- **Docker** and **Docker Compose** (for any deployment mode)
+- **Terraform** >= 1.10.0 and **Ansible** >= 2.9 (for cloud deployments)
+- **kubectl** (for Kubernetes deployments)
+- Cloud credentials: `aws configure` or `az login`
+
+### Local Deployment
 
 ```bash
-# Clone repository
-git clone https://github.com/yourusername/mineclifford.git
-cd mineclifford
+git clone https://github.com/Saccilotto/Mineclifford-Server.git
+cd Mineclifford-Server
 
 # Copy environment template
 cp .env.example .env
 
-# Start web dashboard
-docker compose -f docker-compose.web.yml up -d
-
-# Access at http://localhost
-# API docs at http://localhost/docs
+# Deploy locally
+./minecraft-ops.sh deploy --orchestration compose --skip-terraform
 ```
 
-Use the web interface to:
+Connect at `localhost:25565`. RCON Web Admin at `localhost:4326`.
 
-1. Click "New Server"
-2. Choose provider (Local Docker, AWS, or Azure)
-3. Configure server settings
-4. Watch real-time deployment progress
-5. Access live console when ready
-
-### Option 2: CLI Operations
+### Cloud Deployment (AWS)
 
 ```bash
-# Deploy locally for testing (compose mode)
-./minecraft-ops.sh deploy --orchestration compose --skip-terraform
+# Configure AWS credentials
+aws configure
 
-# Deploy to AWS with Docker Swarm
+# Deploy with Docker Swarm
 ./minecraft-ops.sh deploy --provider aws --orchestration swarm
 
-# Deploy to AWS with Docker Compose on VM(s)
-./minecraft-ops.sh deploy --provider aws --orchestration compose
-
-# Deploy to Azure with Kubernetes
-./minecraft-ops.sh deploy --provider azure --orchestration kubernetes
-
-# Custom project name, environment, and region
-./minecraft-ops.sh deploy --provider aws --orchestration kubernetes \
-  --project-name myserver --environment staging --region us-west-2
-
-# Custom instance type and disk size
+# Custom configuration
 ./minecraft-ops.sh deploy --provider aws --orchestration swarm \
-  --instance-type t3.large --disk-size 50
-
-# Check status
-./minecraft-ops.sh status --provider aws
-
-# Destroy infrastructure
-./minecraft-ops.sh destroy --provider aws
+  --project-name mycraft --environment staging \
+  --region us-west-2 --instance-type t3.large --disk-size 50 \
+  --minecraft-version 1.21.11 --memory 3G
 ```
 
-#### Infrastructure Flags
-
-| Flag | Description | Default |
-| ---- | ----------- | ------- |
-| `--project-name NAME` | Project name for resource naming and tagging | `mineclifford` |
-| `--environment ENV` | Environment tag (`production`, `staging`, `development`, `test`) | `production` |
-| `--owner OWNER` | Owner tag for resources | `minecraft` |
-| `--region REGION` | Cloud region (provider-aware) | `sa-east-1` (AWS) / `East US 2` (Azure) |
-| `--instance-type TYPE` | VM/instance type (provider-aware) | `t3.medium` (AWS) / `Standard_B2s` (Azure) |
-| `--disk-size GB` | Disk size in GB | `30` |
-
-These flags are exported as `TF_VAR_*` environment variables and flow directly into Terraform, ensuring all resources (tags, names, sizing) match your CLI input.
-
-## Configuration
-
-### Environment Variables
-
-Copy `.env.example` to `.env` and configure:
-
-```env
-# Cloud Credentials (optional, for cloud deployments)
-AWS_ACCESS_KEY_ID=your_aws_key
-AWS_SECRET_ACCESS_KEY=your_aws_secret
-AWS_REGION=us-east-2
-
-AZURE_SUBSCRIPTION_ID=your_azure_id
-
-# Cloudflare (for production with SSL)
-CF_API_EMAIL=admin@example.com
-CF_API_TOKEN=your_cloudflare_token
-DOMAIN_NAME=yourdomain.com
-ACME_EMAIL=admin@yourdomain.com
-
-# Server Defaults
-MINECRAFT_VERSION=latest
-MINECRAFT_GAMEMODE=survival
-MINECRAFT_DIFFICULTY=normal
-MINECRAFT_MEMORY=2G
-TZ=UTC
-```
-
-See `.env.example` for all available options.
-
-## Monitoring (Optional)
-
-Optional Prometheus and Grafana stack for server metrics:
-
-- **Prometheus**: Collects server resource and Minecraft-specific metrics
-- **Grafana**: Visualizes dashboards for resource usage and player activity
-- **Node Exporter**: System-level metrics
-
-Access Grafana at `http://server-ip:3000` (default: admin/admin)
-
-## Deploying to the Cloud
-
-See [docs/CLOUD-DEPLOYMENT.md](docs/CLOUD-DEPLOYMENT.md) for the full cloud deployment guide.
-
-## Web Dashboard and Production Deployment (On Standby)
-
-A browser-based management interface exists at `src/web/` (FastAPI + vanilla JS). It supports real-time console streaming, server creation, and deployment progress tracking. The production deployment stack (Traefik reverse proxy, Let's Encrypt SSL, BasicAuth, Cloudflare DNS) is also part of this web interface layer.
-
-Both the dashboard and the production Traefik deployment have **not been actively tested** against recent infrastructure changes and are considered on standby. The CLI (`minecraft-ops.sh`) is the primary and tested deployment interface.
+### Modded Server
 
 ```bash
-# Run the dashboard locally (not tested with latest infra changes)
-docker compose -f docker-compose.web.yml up -d
-# Access at http://localhost
+# Create mod on Fabric (local)
+./minecraft-ops.sh deploy --orchestration compose --skip-terraform \
+  --server-type FABRIC --mods "create-fabric,fabric-api" \
+  --minecraft-version 1.20.1 --memory 4G
 
-# Production with SSL (on standby — not tested with latest changes)
-# docker compose -f docker-compose.traefik.yml up -d
-# Access at https://yourdomain.com
+# Create mod on Forge (AWS)
+./minecraft-ops.sh deploy --provider aws --orchestration swarm \
+  --server-type FORGE --mods "create" \
+  --minecraft-version 1.20.1 --memory 4G
 ```
+
+## CLI Reference
+
+```bash
+./minecraft-ops.sh [ACTION] [OPTIONS]
+```
+
+| Action | Description |
+|--------|-------------|
+| `deploy` | Deploy Minecraft infrastructure (default) |
+| `destroy` | Tear down all deployed resources |
+| `status` | Check deployed infrastructure status |
+| `backup` | Backup Minecraft worlds |
+| `restore` | Restore worlds from backup |
+| `save-state` / `load-state` | Manage Terraform state remotely |
+
+### Key Flags
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--provider <aws\|azure>` | Cloud provider | `aws` |
+| `--orchestration <swarm\|kubernetes\|compose>` | Orchestration mode | `swarm` |
+| `--skip-terraform` | Local-only mode (no cloud) | `false` |
+| `--server-type <VANILLA\|FABRIC\|FORGE\|...>` | Server type | `VANILLA` |
+| `--mods "slug1,slug2"` | Modrinth mod slugs | -- |
+| `--minecraft-version VERSION` | Game version | `1.21.11` |
+| `--memory MEMORY` | JVM memory | `2G` |
+| `--project-name NAME` | Resource naming/tagging | `mineclifford` |
+| `--instance-type TYPE` | VM size | `t3.medium` / `Standard_B2s` |
+
+See [docs/CLI-REFERENCE.md](docs/CLI-REFERENCE.md) for the full flag list and variable flow diagram.
 
 ## Project Structure
 
-```plaintext
-mineclifford/
-├── src/web/              # Web dashboard (FastAPI + HTML/JS)
-├── terraform/            # Infrastructure as code (AWS/Azure/Cloudflare)
-├── deployment/           # Ansible playbooks and Docker configs
-├── docker/               # Dockerfiles and configs
-├── scripts/              # Utility scripts
-└── docs/                 # Documentation
 ```
+mineclifford/
++-- minecraft-ops.sh              # Main CLI -- single entry point
++-- terraform/
+|   +-- aws/                      # EC2, VPC, EIPs, security groups
+|   |   +-- kubernetes/           # EKS cluster, IAM, EBS CSI
+|   +-- azure/                    # VMs, VNet, resource groups
+|   |   +-- kubernetes/           # AKS cluster, VNet, logging
+|   +-- cloudflare/               # DNS, SSL, security rules
+|   +-- modules/common/           # SSH keys, security rules, inventory
++-- deployment/
+|   +-- ansible/                  # Swarm/Compose setup playbook
+|   +-- swarm/                    # Docker Swarm stack templates
+|   +-- kubernetes/               # Kustomize base + provider overlays
+|   +-- helm/                     # Helm charts (alternative to Kustomize)
++-- src/
+|   +-- version_manager/          # Async Python version manager
+|   +-- web/                      # FastAPI + JS dashboard (on standby)
++-- docker/web/                   # Dockerfiles, Nginx configs
++-- scripts/                      # State mgmt, secrets, verification
++-- docs/                         # CLI reference, architecture, guides
+```
+
+## Component Status
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| CLI (`minecraft-ops.sh`) | Active | Primary deployment interface |
+| Terraform (AWS/Azure) | Active | EC2, EKS, Azure VMs, AKS |
+| Ansible + Docker Swarm | Active | Primary orchestration method |
+| Kubernetes (EKS/AKS) | Active | Manifests defined, testing in progress |
+| Cloudflare DNS/SSL | Active | Full TLS stack |
+| Helm Charts | Available | Alternative to Kustomize |
+| Web Dashboard | On standby | Built but not tested against latest infra |
+| Monitoring (Prometheus/Grafana) | On standby | Defined in stack, disabled in playbook |
 
 ## Documentation
 
-- [CLI Reference](docs/CLI-REFERENCE.md) - Full `minecraft-ops.sh` usage, flags, and variable flow
-- [Architecture](docs/ARCHITECTURE.md) - System overview, component status, and directory structure
-- [Cloud Deployment](docs/CLOUD-DEPLOYMENT.md) - Step-by-step cloud deployment guide
-- [Web Dashboard](src/web/README.md) - Dashboard architecture and API (on standby)
-- [Cloudflare DNS](terraform/cloudflare/README.md) - DNS and SSL management
+- **[CLI Reference](docs/CLI-REFERENCE.md)** -- Full `minecraft-ops.sh` usage, flags, and variable flow
+- **[Architecture](docs/ARCHITECTURE.md)** -- System overview, component status, directory map
+- **[Cloud Deployment](docs/CLOUD-DEPLOYMENT.md)** -- Step-by-step cloud deployment guide
+- **[Mod Support](docs/MODS.md)** -- Fabric, Forge, NeoForge with Modrinth auto-download
+- **[Web Dashboard](src/web/README.md)** -- Dashboard architecture and API
+- **[Cloudflare DNS](terraform/cloudflare/README.md)** -- DNS and SSL management
+
+## Tech Stack
+
+| Layer | Tools |
+|-------|-------|
+| IaC | Terraform (AWS, Azure, Cloudflare) |
+| Configuration | Ansible, Shell |
+| Orchestration | Docker Swarm, Kubernetes (EKS/AKS), Docker Compose |
+| Backend | FastAPI, Python (async), Go (custom Terraform providers) |
+| Monitoring | Prometheus, Grafana, Node Exporter, cAdvisor |
+| Networking | Traefik, Nginx, Cloudflare (DNS challenge + SSL) |
+| Game Server | itzg/minecraft-server (Java), itzg/minecraft-bedrock-server |
 
 ## Contributing
 
-Contributions welcome! Open an issue or submit a pull request.
+Contributions welcome. Open an issue or submit a pull request.
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file.
+[GNU Affero General Public License v3.0](LICENSE)
 
 ## Credits
 
-- [itzg/docker-minecraft-server](https://github.com/itzg/docker-minecraft-server) - Docker images
-- [Terraform](https://www.terraform.io/) - Infrastructure provisioning
-- [Ansible](https://www.ansible.com/) - Configuration automation
-- [FastAPI](https://fastapi.tiangolo.com/) - Backend framework
+- [itzg/docker-minecraft-server](https://github.com/itzg/docker-minecraft-server) -- Docker images for Minecraft
+- [Terraform](https://www.terraform.io/) -- Infrastructure provisioning
+- [Ansible](https://www.ansible.com/) -- Configuration automation
+- [FastAPI](https://fastapi.tiangolo.com/) -- Backend framework
